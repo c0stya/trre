@@ -1,2 +1,2 @@
-# trre
-Transductive regular expressions
+# TRRE: transductive regular expressions
+
