@@ -16,33 +16,33 @@ To justify the laguage of trunsductive regular expression we need:
 
 First, let's define the `re` language and then extend it to the `trre` language.
 
-*Definition*. Let $\mathfrak{A}$ be an finite set augmented with symbols $\emptyset$ and $\epsilon$. We call it an alphabet. Then `re` language will be set of words over the alphabet $\mathfrak{A}^*$ and symbols '$+$', $\cdot$ and $*$ defined inductively:
+**Definition**. Let $\mathbb{A}$ be an finite set augmented with symbols $\emptyset$ and $\varepsilon$. We call it an alphabet. Then `re` language will be set of words over the alphabet $\mathbb{A}^*$ and symbols '$+$', $\cdot$ and $*$ defined inductively:
 
-1. for any symbol $a$ in the alphabet $\mathfrak{A}$, $a$ is a regular expression
-2. $\epsilon$ and $\emptyset$ are regular expressions
+1. for any symbol $a$ in the alphabet $\mathbb{A}$, $a$ is a regular expression
+2. $\varepsilon$ and $\emptyset$ are regular expressions
 3. for any regular expressions $r$ and $s$ the words $r+s$, $r \cdot s$ and $r*$ are regular expressions
 
 Note that the we defined an expression so far, i.e. chain of symbols. We need to define the semantics.
 
-*Definition*. For a given regular expression $r$ the language of $r$ denoted as $L(r)$ is a set of finite words defined inductively:
+**Definition**. For a given regular expression $r$ the language of $r$ denoted as $L(r)$ is a set of finite words defined inductively:
 
-1. for a one-symbol regular expression  $a$ in the alphabet $\mathfrak{A}$ its language defined as $L(a) = {a}$
-2. for a regular expression $\epsilon$ its language is $L(\epsilon) = {\epsilon}$
+1. for a one-symbol regular expression  $a$ in the alphabet $\mathbb{A}$ its language defined as $L(a) = {a}$
+2. for a regular expression $\varepsilon$ its language is $L(\varepsilon) = {\varepsilon}$
 3. for a regular expression $\emptyset$ its language is $L(\emptyset) = \emptyset$
 4. for regular expressions $r, s$
-    $L(r + s) = L(r) \cup L(s)$,
-    $L(r \cdot s) = L(r) \cdot L(s)$,
-    $L(r*) = L(r)* = \sum_{n \geq 0} r^n$.
+    $$L(r + s) = L(r) \cup L(s)$$,
+    $$L(r \cdot s) = L(r) \cdot L(s)$$,
+    $$L(r*) = L(r)* = \sum_{n \geq 0} r^n$$.
 
 ### `trre` syntax and language specification
 
-*Definition*. Let $r,s$ be a set of regular expression.  and $S$ be \mathfrak{A}$ be an finite set augmented with symbols $\emptyset$ and $\epsilon$. We call it an alphabet. Then `re` language will be set of words over the alphabet $\mathfrak{A}^*$ and symbols '$+$', $\cdot$ and $*$ defined inductively:
+**Definition**. Let $r,s$ be a set of regular expression.  and $S$ be \mathbb{A}$ be an finite set augmented with symbols $\emptyset$ and $\varepsilon$. We call it an alphabet. Then `re` language will be set of words over the alphabet $\mathbb{A}^*$ and symbols '$+$', $\cdot$ and $*$ defined inductively:
 
 1. for regular expressions $r, s$, the string $r:s$ is a transductive regular expression
 2. for transductive regular expressions $t, u$
     $t \cdot u$, $t + u$, $t*$ are transductive regular expressions
 
-*Definition*. For a given transductive regular expression $t$ the language of $t$ denoted as $L(t)$ is a set of *pairs* of words defined inductively:
+**Definition**. For a given transductive regular expression $t$ the language of $t$ denoted as $L(t)$ is a set of *pairs* of words defined inductively:
 
 1. for a transductive regular expression $r:s$ where r, s are the regular expressions the language $L(r:s) = L(r) \times L(s) = { (a,b) | a \in L(r), b \in L(s) }, i.e. the direct product of languages L(r) and L(s).
 2. for transudctive regular expression $t, u$:
@@ -53,7 +53,7 @@ Note that the we defined an expression so far, i.e. chain of symbols. We need to
 
 ### Automata equivalence
 
-Lemma. 
+Lemma.  
 
 ### Inference
 
