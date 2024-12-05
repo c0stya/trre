@@ -30,15 +30,13 @@
 #define POP(stack) 		(*--(stack))
 
 
-enum trre_state_type { ST_CHAR, ST_SPLIT, ST_JOIN, ST_FINAL, ST_SEPS, ST_ITER };
+enum trre_state_type { ST_CHAR, ST_SPLIT, ST_JOIN, ST_FINAL, ST_SEPS, ST_ITER, ST_MODE };
 
 struct trre_state {
     enum trre_state_type type;
     char val;
     struct trre_state *next;
     struct trre_state *nextb;
-    uint8_t mode;
-    int step_id;
 };
 
 // static int step_id = 0;
@@ -229,44 +227,6 @@ struct tr_chunk chunk(struct trre_state *head, struct trre_state *tail)
 	return chnk;
 }
 
-// should we just store list of states?
-
-void set_mode(struct trre_state *start, int mode) {
-    struct trre_state *state, **stackc, **sc;
-
-    stackc = malloc(n_states *sizeof(struct trre_state *));
-    sc = stackc;
-
-    #define push(s) *sc++ = s
-    #define pop() *--sc
-
-    push(start);
-
-    while (sc != stackc) {
-	state = pop();
-	if(state == NULL || state->step_id == 1)
-	    continue;
-
-
-	state->step_id = 1;
-
-	if (state->type == ST_SPLIT) {
-	    push(state->next);
-	    push(state->nextb);
-	} else if (state->type == ST_JOIN)
-	    push(state->next);
-	else if (state->type == ST_CHAR) {
-	    state->mode = mode;
-	    //printf("step_id: %d, %d\n", state->step_id, state->mode);
-	    push(state->next);
-	}
-    }
-    free(stackc);
-
-    #undef push
-    #undef pop
-}
-
 struct trre_state * create_state(struct trre_state *next, struct trre_state *nextb, int type) {
     struct trre_state *state;
 
@@ -274,8 +234,8 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
     state->next = next;
     state->nextb = nextb;
     state->type = type;
-    state->mode = PRODCONS;
-    state->step_id = 0;
+    // state->mode = PRODCONS;
+    // state->step_id = 0;
 
     n_states++;
 
@@ -284,6 +244,7 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
 
 struct trre_state* postfix_to_nft(const uint16_t * postfix) {
     struct trre_state *state, *left, *right;
+    struct trre_state *state_cons, *state_prod, *state_prodcons;
     const uint16_t *c = postfix;
     struct tr_chunk stack[10000], *stackp, ch0, ch1;
 
@@ -333,7 +294,7 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    case OP_ITER_LE:
 	    	ch0 = pop();
 		state = create_state(NULL, ch0.head, GATE_LE);
-		state->c = (char)*c;
+		state->val = (char)*c;
 	    	ch0.tail->next = state;
 	    	push(chunk(ch0.head, state));
 	    	break;
@@ -347,11 +308,18 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    case OP_COL:
 	    	ch1 = pop();
 	    	ch0 = pop();
-		// find more efficient way
-		set_mode(ch0.head, CONS);
-		set_mode(ch1.head, PROD);
-	    	ch0.tail->next = ch1.head;
-	    	push(chunk(ch0.head, ch1.tail));
+
+		state_cons = create_state(ch0.head, NULL, ST_MODE);
+		state_cons->val = CONS;
+		state_prod = create_state(ch1.head, NULL, ST_MODE);
+		state_prod->val = PROD;
+		state_prodcons = create_state(NULL, NULL, ST_MODE);
+		state_prodcons->val = PRODCONS;
+
+	    	ch0.tail->next = state_prod;
+	    	ch1.tail->next = state_prodcons;
+
+	    	push(chunk(state_cons, state_prodcons));
 	    	break;
 	    case EPS:
 		state = create_state(NULL, NULL, ST_SEPS);
@@ -386,6 +354,7 @@ int infer(struct trre_state *start, char *input)
 {
     struct trre_state *state, **states, **st;
     int *indices, *it, i=0, o=0;
+    int mode=PRODCONS;
     char output[1024];
 
     states = malloc(2* n_states * sizeof(struct trre_state *));
@@ -397,30 +366,35 @@ int infer(struct trre_state *start, char *input)
     PUSH(st, start);
     PUSH(it, i);
     PUSH(it, o);
+    PUSH(it, mode);
 
     while (st != states) {
     	state = POP(st);
+    	mode = POP(it);
     	o = POP(it);
     	i = POP(it);
 
 	if(state == NULL) continue;
 	switch (state->type) {
 	    case(ST_CHAR):
-		if(state->mode == CONS && state->val == input[i] && input[i] != '\0') {
+		if(mode == CONS && state->val == input[i] && input[i] != '\0') {
 		    PUSH(it, i+1);
 		    PUSH(it, o);
+		    PUSH(it, mode);
 		    PUSH(st, state->next);
 		}
-		else if(state->mode == PRODCONS && state->val == input[i] && input[i] != '\0') {
+		else if(mode == PRODCONS && state->val == input[i] && input[i] != '\0') {
 		    output[o] = state->val;
 		    PUSH(it, i+1);
 		    PUSH(it, o+1);
+		    PUSH(it, mode);
 		    PUSH(st, state->next);
 		}
-		else if(state->mode == PROD) {
+		else if(mode == PROD) {
 		    output[o] = state->val;
 		    PUSH(it, i);
 		    PUSH(it, o+1);
+		    PUSH(it, mode);
 		    PUSH(st, state->next);
 		}
 		break;
@@ -428,9 +402,11 @@ int infer(struct trre_state *start, char *input)
 		PUSH(st, state->nextb);
 		PUSH(it, i);
 		PUSH(it, o);
+		PUSH(it, mode);
 		PUSH(st, state->next);
 		PUSH(it, i);
 		PUSH(it, o);
+		PUSH(it, mode);
 		break;
 	    case(ST_ITER):
 	    	if (state->val > 0) {
@@ -438,13 +414,16 @@ int infer(struct trre_state *start, char *input)
 		    PUSH(st, state->nextb);
 		    PUSH(it, i);
 		    PUSH(it, o);
+		    PUSH(it, mode);
 		} else {
 		    PUSH(st, state->nextb);
 		    PUSH(it, i);
 		    PUSH(it, o);
+		    PUSH(it, mode);
 		    PUSH(st, state->next);
 		    PUSH(it, i);
 		    PUSH(it, o);
+		    PUSH(it, mode);
 		}
 		break;
 	    case(ST_JOIN):
@@ -452,11 +431,19 @@ int infer(struct trre_state *start, char *input)
 		PUSH(st, state->next);
 		PUSH(it, i);
 		PUSH(it, o);
+		PUSH(it, mode);
+		break;
+	    case(ST_MODE):
+		PUSH(st, state->next);
+		PUSH(it, i);
+		PUSH(it, o);
+		PUSH(it, state->val);	// switch mode
 		break;
 	    case(ST_FINAL):
 		PUSH(st, state->next);
 		PUSH(it, i);
 		PUSH(it, o);
+		PUSH(it, mode);
 		if (input[i] == '\0') {
 		    output[o] = '\0';
 		    printf("%s\n", output);
