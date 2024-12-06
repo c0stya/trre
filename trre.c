@@ -35,6 +35,8 @@ enum trre_state_type { ST_CHAR, ST_SPLIT, ST_JOIN, ST_FINAL, ST_SEPS, ST_ITER, S
 struct trre_state {
     enum trre_state_type type;
     char val;
+    uint16_t gval;
+    uint16_t lval;
     struct trre_state *next;
     struct trre_state *nextb;
 };
@@ -144,7 +146,7 @@ void normalize(const uint16_t *src, uint16_t *dst) {
 
 int parse_iteration(const uint16_t *src, uint16_t *dst) {
     int inside=0;
-    uint8_t count=0, count_g, count_l;
+    uint8_t count=0, count_g=0, count_l=0;
 
     for(; *src != EOS; src++) {
 	if (*src == L_CB)  {
@@ -160,9 +162,10 @@ int parse_iteration(const uint16_t *src, uint16_t *dst) {
 		inside += 1;
 	    }
 	    if (*src == R_CB) {
-	    	if (inside == 1)			// one operand
+	    	if (inside == 1) {			// one operand
 	    	    count_g = count;
-		else					// two operands
+		    count_l = count;
+		} else					// two operands
 		    count_l = count;
 
 		*dst++ = (OP_ITER_G | count_g);
@@ -286,20 +289,17 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    case OP_ITER_G:
 		ch0 = pop();
 		state = create_state(NULL, ch0.head, ST_ITER);
+		state->val = 0;
 		ch0.tail->next = state;
-		state->val = (char)*c;
+		state->gval = (uint8_t)*c;
 	    	push(chunk(state, state));
 	    	break;
-	    /*
-	    case OP_ITER_LE:
-	    	ch0 = pop();
-		state = create_state(NULL, ch0.head, GATE_LE);
-		state->val = (char)*c;
-	    	ch0.tail->next = state;
-	    	push(chunk(ch0.head, state));
+	    case OP_ITER_L:
+		ch0 = pop();
+		ch0.head->lval = (uint8_t)*c;
+	    	push(ch0);
 	    	break;
-	    */
-	     case OP_CAT:		// cat
+	    case OP_CAT:		// cat
 	    	ch1 = pop();
 	    	ch0 = pop();
 	    	ch0.tail->next = ch1.head;
@@ -357,8 +357,8 @@ int infer(struct trre_state *start, char *input)
     int mode=PRODCONS;
     char output[1024];
 
-    states = malloc(2* n_states * sizeof(struct trre_state *));
-    indices = malloc(10 * (n_states) * sizeof(int));
+    states = malloc(10* n_states * sizeof(struct trre_state *));
+    indices = malloc(100 * (n_states) * sizeof(int));
 
     st = states;
     it = indices;
@@ -409,22 +409,34 @@ int infer(struct trre_state *start, char *input)
 		PUSH(it, mode);
 		break;
 	    case(ST_ITER):
-	    	if (state->val > 0) {
-	    	    state->val--;
-		    PUSH(st, state->nextb);
-		    PUSH(it, i);
-		    PUSH(it, o);
-		    PUSH(it, mode);
+	    	printf("state: %p, gval: %d, lval: %d, val: %d, i: %d\n", state, state->gval, state->lval, state->val, i);
+	    	//printf("state: %p\n", state);
+	    	if (i > -1) {
+		    if (state->val >= state->gval && (state->val <= state->lval || state->lval == 0)) {
+			PUSH(st, state->next);
+			PUSH(it, i);
+			PUSH(it, o);
+			PUSH(it, mode);
+			state->val = 0;
+		    }
+	    	    if (state->val < state->lval || state->lval == 0) {
+			// backtrack sentinel
+			PUSH(st, state);
+			PUSH(it, -1);
+			PUSH(it, -1);
+			PUSH(it, mode);
+
+			PUSH(st, state->nextb);
+			PUSH(it, i);
+			PUSH(it, o);
+			PUSH(it, mode);
+
+			state->val++;
+		    }
 		} else {
-		    PUSH(st, state->nextb);
-		    PUSH(it, i);
-		    PUSH(it, o);
-		    PUSH(it, mode);
-		    PUSH(st, state->next);
-		    PUSH(it, i);
-		    PUSH(it, o);
-		    PUSH(it, mode);
-		}
+	    	    state->val--;	// backtracking
+	    	    assert(state->val > -1);
+	    	}
 		break;
 	    case(ST_JOIN):
 	    case(ST_SEPS):
