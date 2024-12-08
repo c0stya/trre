@@ -352,114 +352,65 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 /* Run NFA to determine whether it matches s. */
 int infer(struct trre_state *start, char *input)
 {
-    struct trre_state *state, **states, **st;
+    struct trre_state *state=start, **states, **st;
     int *indices, *it, i=0, o=0;
     int mode=PRODCONS;
-    char output[1024];
+    char output[10000];
 
-    states = malloc(10* n_states * sizeof(struct trre_state *));
-    indices = malloc(100 * (n_states) * sizeof(int));
+    states = malloc(10 * n_states * sizeof(struct trre_state *));
+    indices = malloc(10 * (n_states) * sizeof(int));
 
     st = states;
     it = indices;
 
-    PUSH(st, start);
-    PUSH(it, i);
-    PUSH(it, o);
-    PUSH(it, mode);
-
-    while (st != states) {
-    	state = POP(st);
-    	mode = POP(it);
-    	o = POP(it);
-    	i = POP(it);
-
-	if(state == NULL) continue;
+    while (state != NULL || st != states) {
+    	if (state == NULL) {
+	    state = POP(st);
+	    mode = POP(it);
+	    o = POP(it);
+	    i = POP(it);
+	}
 	switch (state->type) {
 	    case(ST_CHAR):
 		if(mode == CONS && state->val == input[i] && input[i] != '\0') {
-		    PUSH(it, i+1);
-		    PUSH(it, o);
-		    PUSH(it, mode);
-		    PUSH(st, state->next);
+		    i++;
 		}
 		else if(mode == PRODCONS && state->val == input[i] && input[i] != '\0') {
 		    output[o] = state->val;
-		    PUSH(it, i+1);
-		    PUSH(it, o+1);
-		    PUSH(it, mode);
-		    PUSH(st, state->next);
+		    i++; o++;
 		}
 		else if(mode == PROD) {
 		    output[o] = state->val;
-		    PUSH(it, i);
-		    PUSH(it, o+1);
-		    PUSH(it, mode);
-		    PUSH(st, state->next);
+		    o++;
+		} else {
+		    state = NULL;
+		    break;
 		}
+		state = state->next;
 		break;
 	    case(ST_SPLIT):
 		PUSH(st, state->nextb);
 		PUSH(it, i);
 		PUSH(it, o);
 		PUSH(it, mode);
-		PUSH(st, state->next);
-		PUSH(it, i);
-		PUSH(it, o);
-		PUSH(it, mode);
+		state = state->next;
 		break;
 	    case(ST_ITER):
-	    	printf("state: %p, gval: %d, lval: %d, val: %d, i: %d\n", state, state->gval, state->lval, state->val, i);
-	    	//printf("state: %p\n", state);
-	    	if (i > -1) {
-		    if (state->val >= state->gval && (state->val <= state->lval || state->lval == 0)) {
-			PUSH(st, state->next);
-			PUSH(it, i);
-			PUSH(it, o);
-			PUSH(it, mode);
-			state->val = 0;
-		    }
-	    	    if (state->val < state->lval || state->lval == 0) {
-			// backtrack sentinel
-			PUSH(st, state);
-			PUSH(it, -1);
-			PUSH(it, -1);
-			PUSH(it, mode);
-
-			PUSH(st, state->nextb);
-			PUSH(it, i);
-			PUSH(it, o);
-			PUSH(it, mode);
-
-			state->val++;
-		    }
-		} else {
-	    	    state->val--;	// backtracking
-	    	    assert(state->val > -1);
-	    	}
 		break;
 	    case(ST_JOIN):
 	    case(ST_SEPS):
-		PUSH(st, state->next);
-		PUSH(it, i);
-		PUSH(it, o);
-		PUSH(it, mode);
+		state = state->next;
 		break;
 	    case(ST_MODE):
-		PUSH(st, state->next);
-		PUSH(it, i);
-		PUSH(it, o);
-		PUSH(it, state->val);	// switch mode
+	    	mode = state->val;
+		state = state->next;
 		break;
 	    case(ST_FINAL):
-		PUSH(st, state->next);
-		PUSH(it, i);
-		PUSH(it, o);
-		PUSH(it, mode);
 		if (input[i] == '\0') {
 		    output[o] = '\0';
 		    printf("%s\n", output);
 		}
+		state = state->next;
 	    }
     }
 
