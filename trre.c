@@ -11,8 +11,7 @@
 #define OP_STAR		'*' << 8
 #define OP_PLUS		'+' << 8
 #define OP_QUEST	'?' << 8
-#define OP_ITER_G	'>' << 8
-#define OP_ITER_L	'<' << 8
+#define OP_ITER		'I' << 8
 
 #define L_PR	'(' << 8
 #define R_PR	')' << 8
@@ -30,15 +29,22 @@
 #define POP(stack) 		(*--(stack))
 
 
-enum trre_state_type { ST_CHAR, ST_SPLIT, ST_JOIN, ST_FINAL, ST_SEPS, ST_ITER, ST_MODE };
+enum trre_state_type {
+    ST_CHAR,
+    ST_SPLIT,
+    ST_JOIN,
+    ST_FINAL,
+    ST_SEPS,
+    ST_ITER,
+    ST_MODE
+};
 
 struct trre_state {
     enum trre_state_type type;
     char val;
-    uint16_t gval;
-    uint16_t lval;
     struct trre_state *next;
     struct trre_state *nextb;
+    struct trre_state *nextc;
 };
 
 // static int step_id = 0;
@@ -79,8 +85,7 @@ int precedence(const uint16_t op) {
 	case OP_CAT:
 	    return 2;
 	case OP_PLUS:
-	case OP_ITER_G:
-	case OP_ITER_L:
+	case OP_ITER:
 	case OP_STAR:
 	    return 3;
 	case OP_COL:
@@ -146,7 +151,7 @@ void normalize(const uint16_t *src, uint16_t *dst) {
 
 int parse_iteration(const uint16_t *src, uint16_t *dst) {
     int inside=0;
-    uint8_t count=0, count_g=0, count_l=0;
+    uint16_t count=0, count_g=0, count_l=0;
 
     for(; *src != EOS; src++) {
 	if (*src == L_CB)  {
@@ -168,8 +173,9 @@ int parse_iteration(const uint16_t *src, uint16_t *dst) {
 		} else					// two operands
 		    count_l = count;
 
-		*dst++ = (OP_ITER_G | count_g);
-		*dst++ = (OP_ITER_L | count_l);
+		*dst++ = OP_ITER;
+		*dst++ = count_g;
+		*dst++ = count_l;
 
 		count = 0;
 		inside = 0;
@@ -199,8 +205,7 @@ int infix_to_postfix(const uint16_t *src, uint16_t *dst) {
 		else
 		    top--;	     	// remove '(' from stack
 		break;
-	    //case OP_ITER_G:
-	    //case OP_ITER_L:
+	    //case OP_ITER:
 	    case OP_ALT:
 	    case OP_CAT:
 	    //TODO: check the following
@@ -237,8 +242,6 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
     state->next = next;
     state->nextb = nextb;
     state->type = type;
-    // state->mode = PRODCONS;
-    // state->step_id = 0;
 
     n_states++;
 
@@ -246,10 +249,11 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
 }
 
 struct trre_state* postfix_to_nft(const uint16_t * postfix) {
-    struct trre_state *state, *left, *right;
+    struct trre_state *state, *left, *right, *prev;
     struct trre_state *state_cons, *state_prod, *state_prodcons;
     const uint16_t *c = postfix;
     struct tr_chunk stack[10000], *stackp, ch0, ch1;
+    int g_iter, l_iter;
 
     stackp = stack;
 
@@ -260,15 +264,15 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
     	switch(*c & 0xff00) {
 	    case OP_STAR:
 		ch0 = pop();
-		left = create_state(NULL, ch0.head, ST_SPLIT);
-		ch0.tail->next = left;
-	    	push(chunk(left, left));
+		state = create_state(NULL, ch0.head, ST_SPLIT);
+		ch0.tail->next = state;
+	    	push(chunk(state, state));
 	    	break;
 	    case OP_PLUS:
 		ch0 = pop();
-		right = create_state(NULL, ch0.head, ST_SPLIT);
-		ch0.tail->next = right;
-	    	push(chunk(ch0.head, right));
+		state = create_state(NULL, ch0.head, ST_SPLIT);
+		ch0.tail->next = state;
+	    	push(chunk(ch0.head, state));
 	    	break;
 	    case OP_QUEST:
 		ch0 = pop();
@@ -286,18 +290,28 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 		ch1.tail->next = right;
 	    	push(chunk(left, right));
 		break;
-	    case OP_ITER_G:
+	    case OP_ITER:
+	    	g_iter = (uint16_t)*++c;
+	    	l_iter = (uint16_t)*++c;
+	    	assert (*c != EOS);
+
 		ch0 = pop();
-		state = create_state(NULL, ch0.head, ST_ITER);
-		state->val = 0;
-		ch0.tail->next = state;
-		state->gval = (uint8_t)*c;
-	    	push(chunk(state, state));
-	    	break;
-	    case OP_ITER_L:
-		ch0 = pop();
-		ch0.head->lval = (uint8_t)*c;
-	    	push(ch0);
+		printf("%d %d\n", g_iter, l_iter);
+	    	if (g_iter + l_iter > 0){
+		    right = create_state(NULL, NULL, ST_JOIN);
+		    prev = right;
+		    for (int i=l_iter; i > 0; i--) {
+			state = create_state(ch0.head, ch0.tail, ST_ITER);
+			state->nextc = create_state(prev, NULL, ST_ITER);
+			if (i > g_iter)
+			    (state->nextc)->nextb = right;
+			prev = state;
+		    }
+
+		    push(chunk(prev, right));
+		}
+		else
+		   push(ch0);
 	    	break;
 	    case OP_CAT:		// cat
 	    	ch1 = pop();
@@ -396,6 +410,15 @@ int infer(struct trre_state *start, char *input)
 		state = state->next;
 		break;
 	    case(ST_ITER):
+	    	if (state->nextc->nextb) {
+		    PUSH(st, state->nextc->nextb);
+		    PUSH(it, i);
+		    PUSH(it, o);
+		    PUSH(it, mode);
+		}
+	    	// re-link the connection: tail -> next gate
+	    	(state->nextb)->next = (state->nextc)->next; // res
+	    	state = state->next;
 		break;
 	    case(ST_JOIN):
 	    case(ST_SEPS):
@@ -440,8 +463,8 @@ int main(int argc, char **argv)
     postfix = (uint16_t *)malloc((len+1)*sizeof(uint16_t)*2);
 
     parse_escape(argv[1], prep);
-    parse_iteration(prep, infix);
-    parse_inject_cat(infix, infix2);
+    parse_iteration(prep, infix2);
+    //parse_inject_cat(infix, infix2);
     for(uint16_t *s = infix2; *s != EOS; s++)
 	printf("%c", *s > 255 ? *s >> 8 : *s);
     printf("\n");
