@@ -23,6 +23,7 @@
 #define EOS	'$' << 8
 #define EPS	'E' << 8
 
+#define MAX(x,y) (((x) > (y)) ? (x) : (y))
 #define SHIFT(c) ((c) << 8)
 
 #define PUSH(stack, item) 	(*(stack)++ = (item))
@@ -296,22 +297,19 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    	assert (*c != EOS);
 
 		ch0 = pop();
-		printf("%d %d\n", g_iter, l_iter);
-	    	if (g_iter + l_iter > 0){
-		    right = create_state(NULL, NULL, ST_JOIN);
-		    prev = right;
-		    for (int i=l_iter; i > 0; i--) {
-			state = create_state(ch0.head, ch0.tail, ST_ITER);
-			state->nextc = create_state(prev, NULL, ST_ITER);
-			if (i > g_iter)
-			    (state->nextc)->nextb = right;
-			prev = state;
-		    }
+		right = create_state(NULL, NULL, ST_SPLIT);
+		prev = right;
 
-		    push(chunk(prev, right));
+		for (int i=0; i < MAX(g_iter, l_iter); i++) {
+		    state = create_state(ch0.head, ch0.tail, ST_ITER);
+		    state->nextc = create_state(prev, NULL, ST_ITER);
+		    if (i == 0 && l_iter == 0)
+			right->nextb = state;	// *-closure
+		    if (MAX(g_iter, l_iter) - i > g_iter)
+			(state->nextc)->nextb = right;
+		    prev = state;
 		}
-		else
-		   push(ch0);
+		push(chunk(prev, right));
 	    	break;
 	    case OP_CAT:		// cat
 	    	ch1 = pop();
@@ -403,10 +401,12 @@ int infer(struct trre_state *start, char *input)
 		state = state->next;
 		break;
 	    case(ST_SPLIT):
-		PUSH(st, state->nextb);
-		PUSH(it, i);
-		PUSH(it, o);
-		PUSH(it, mode);
+	    	if (state->nextb) {
+		    PUSH(st, state->nextb);
+		    PUSH(it, i);
+		    PUSH(it, o);
+		    PUSH(it, mode);
+		}
 		state = state->next;
 		break;
 	    case(ST_ITER):
