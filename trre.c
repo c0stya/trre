@@ -1,12 +1,14 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <stdbool.h>
 
 #define OP_ALT		'|' << 8
-#define OP_CAT		'.' << 8
+#define OP_CAT		',' << 8
 #define OP_COL		':' << 8
 #define OP_STAR		'*' << 8
 #define OP_PLUS		'+' << 8
@@ -22,6 +24,7 @@
 
 #define EOS	'$' << 8
 #define EPS	'E' << 8
+#define ANY	'.' << 8
 
 #define MAX(x,y) (((x) > (y)) ? (x) : (y))
 #define SHIFT(c) ((c) << 8)
@@ -32,12 +35,17 @@
 
 enum trre_state_type {
     ST_CHAR,
+    ST_CHAR_ANY,
     ST_SPLIT,
     ST_JOIN,
     ST_FINAL,
-    ST_SEPS,
     ST_ITER,
     ST_MODE
+};
+
+enum trre_infer_mode {
+    MODE_SCAN,
+    MODE_MATCH,
 };
 
 struct trre_state {
@@ -99,14 +107,14 @@ int precedence(const uint16_t op) {
 
 void parse_escape(const char *src, uint16_t *dst) {
     bool escape = false;
-    for(; *src; src++) {
+    for(; *src != '\0'; src++) {
         if (escape) {
-            *dst++ = *src;
+            *dst++ = (uint16_t)*src;
             escape = false;
         } else if (*src == '\\')
 	    escape = true;
 	else
-	    *dst++ = is_operator(*src) ? SHIFT(*src) : *src;
+	    *dst++ = is_operator(*src) ? SHIFT((uint16_t)*src) : (uint16_t)*src;
     }
     *dst = EOS; // Terminate the destination array
 }
@@ -114,11 +122,19 @@ void parse_escape(const char *src, uint16_t *dst) {
 
 void parse_inject_cat(const uint16_t *src, uint16_t *dst) {
     int prev = 0;
+    int inside = 0;	// in-block indicator
     for( ;*src != EOS; src++) {
-	if ((*src < 256 || *src == L_PR) && prev)
-	    *dst++ = OP_CAT;
+    	if (!inside) // skip [] {} blocks
+	    if ((*src < 256 || *src == ANY || *src == L_PR) && prev)
+		*dst++ = OP_CAT;
 
-	prev = (*src < 256 || *src == R_PR || *src == OP_STAR || *src == OP_PLUS || *src == OP_QUEST);
+	// rough approach. todo: add syntax validation.
+	if (*src == L_BR || *src == L_CB)
+	    inside = 1;
+	else if (*src == R_BR || *src == R_CB)
+	    inside = 0;
+
+	prev = (*src < 256 || *src == ANY || *src == R_PR || *src == OP_STAR || *src == OP_PLUS || *src == OP_QUEST);
 	*dst++ = *src;
     }
     *dst = EOS;
@@ -333,8 +349,13 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 
 	    	push(chunk(state_cons, state_prodcons));
 	    	break;
+	    case ANY:
+		state = create_state(NULL, NULL, ST_CHAR_ANY);
+		state->val = 0;
+		push(chunk(state, state));
+		break;
 	    case EPS:
-		state = create_state(NULL, NULL, ST_SEPS);
+		state = create_state(NULL, NULL, ST_JOIN);
 		//state->val =(char)*c;
 		push(chunk(state, state));
 	    	break;
@@ -362,11 +383,12 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 
 
 /* Run NFA to determine whether it matches s. */
-int infer(struct trre_state *start, char *input)
+int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode)
 {
     struct trre_state *state=start, **states, **st;
     int *indices, *it, i=0, o=0;
     int mode=PRODCONS;
+    int stop=0;
     char output[10000];
 
     states = malloc(10 * n_states * sizeof(struct trre_state *));
@@ -375,7 +397,7 @@ int infer(struct trre_state *start, char *input)
     st = states;
     it = indices;
 
-    while (state != NULL || st != states) {
+    while (!stop && (state != NULL || st != states)) {
     	if (state == NULL) {
 	    state = POP(st);
 	    mode = POP(it);
@@ -393,6 +415,24 @@ int infer(struct trre_state *start, char *input)
 		}
 		else if(mode == PROD) {
 		    output[o] = state->val;
+		    o++;
+		} else {
+		    state = NULL;
+		    break;
+		}
+		state = state->next;
+		break;
+	    case(ST_CHAR_ANY):
+		if(mode == CONS && input[i] != '\0') {
+		    i++;
+		}
+		else if(mode == PRODCONS && input[i] != '\0') {
+		    output[o] = input[i];
+		    i++; o++;
+		}
+		else if(mode == PROD) {
+		    // what is the proper interpretation?
+		    output[o] =  input[i];
 		    o++;
 		} else {
 		    state = NULL;
@@ -421,7 +461,6 @@ int infer(struct trre_state *start, char *input)
 	    	state = state->next;
 		break;
 	    case(ST_JOIN):
-	    case(ST_SEPS):
 		state = state->next;
 		break;
 	    case(ST_MODE):
@@ -431,9 +470,12 @@ int infer(struct trre_state *start, char *input)
 	    case(ST_FINAL):
 		if (input[i] == '\0') {
 		    output[o] = '\0';
-		    printf("%s\n", output);
+		    fprintf(stdout, "%s\n", output);
+		    if (infer_mode == MODE_SCAN)
+			stop = 1;
 		}
 		state = state->next;
+		break;
 	    }
     }
 
@@ -446,25 +488,43 @@ int infer(struct trre_state *start, char *input)
 
 int main(int argc, char **argv)
 {
+    FILE * fp;
+    char * line = NULL;
+    size_t trre_len = 0;
+    size_t input_len = 0;
+    ssize_t read;
+
     uint16_t *prep, *infix, *infix2, *postfix;
     struct trre_state *state;
-    int len = 0;
 
-    if(argc < 3){
-	fprintf(stderr, "usage: trre <regexp> <string>\n");
-	return 1;
+    if(argc == 3){
+	fp = fopen(argv[2], "r");
+	if (fp == NULL) {
+	    fprintf(stderr, "error: can not open file %s\n", argv[2]);
+	    exit(EXIT_FAILURE);
+	}
+    } else if (argc == 2) {
+    	fp = stdin;
+    } else {
+	fprintf(stderr, "usage: trre <trregexp> <filename>\n");
+	exit(EXIT_FAILURE);
     }
 
-    len = strlen(argv[1]);
+    trre_len = strlen(argv[1]);
+    printf("len: %ld", trre_len);
 
-    prep = (uint16_t *)malloc((len+1)*sizeof(uint16_t));
-    infix = (uint16_t *)malloc((len+1)*sizeof(uint16_t)*2);
-    infix2 = (uint16_t *)malloc((len+1)*sizeof(uint16_t)*2);
-    postfix = (uint16_t *)malloc((len+1)*sizeof(uint16_t)*2);
+    prep = malloc((trre_len+1)*sizeof(uint16_t));
+    if (!prep) {
+        fprintf(stderr, "error: memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+    infix = malloc((trre_len+1)*sizeof(uint16_t)*2);
+    infix2 = malloc((trre_len+1)*sizeof(uint16_t)*2);
+    postfix = malloc((trre_len+1)*sizeof(uint16_t)*2);
 
     parse_escape(argv[1], prep);
-    parse_iteration(prep, infix2);
-    //parse_inject_cat(infix, infix2);
+    parse_inject_cat(prep, infix);
+    parse_iteration(infix, infix2);
     for(uint16_t *s = infix2; *s != EOS; s++)
 	printf("%c", *s > 255 ? *s >> 8 : *s);
     printf("\n");
@@ -475,15 +535,24 @@ int main(int argc, char **argv)
     state = postfix_to_nft(postfix);
 
     if(state == NULL){
-	fprintf(stderr, "syntax error");
-	return 1;
+	fprintf(stderr, "error: syntax");
+	exit(EXIT_FAILURE);
     }
 
-    infer(state, argv[2]);
+    while ((read = getline(&line, &input_len, fp)) != -1) {
+        line[read-1] = '\0';  // is it valid?
+	infer(state, line, MODE_MATCH);
+        //printf("given: %s\n", line);
+    }
 
     free(prep);
     free(infix);
     free(postfix);
+
+    fclose(fp);
+    if (line)
+        free(line);
+    exit(EXIT_SUCCESS);
 
     return 0;
 }
