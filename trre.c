@@ -391,6 +391,7 @@ int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode
     int stop=0;
     char output[10000];
 
+    // todo: change to the dynamic array
     states = malloc(10 * n_states * sizeof(struct trre_state *));
     indices = malloc(10 * (n_states) * sizeof(int));
 
@@ -541,7 +542,7 @@ int main(int argc, char **argv)
 
     while ((read = getline(&line, &input_len, fp)) != -1) {
         line[read-1] = '\0';  // is it valid?
-	infer(state, line, MODE_MATCH);
+	infer(state, line, MODE_SCAN);
         //printf("given: %s\n", line);
     }
 
