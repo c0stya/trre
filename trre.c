@@ -553,54 +553,81 @@ int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode
 
 int main(int argc, char **argv)
 {
-    FILE * fp;
-    char * line = NULL;
-    size_t trre_len = 0;
-    size_t input_len = 0;
+    FILE *fp;
+    char *trre_expr;
+    size_t trre_len = 0, input_len = 0;
     ssize_t read;
+    char *line = NULL, *input_fn;
+    enum trre_infer_mode infer_mode = MODE_SCAN;
 
-    uint16_t *prep, *infix, *infix2, *postfix;
+    uint16_t *prep, *infix, *postfix;
     struct trre_state *state;
 
-    if(argc == 3){
-	fp = fopen(argv[2], "r");
+    int opt, debug=0;
+
+    while ((opt = getopt(argc, argv, "dm")) != -1) {
+       switch (opt) {
+       case 'd':
+	   debug = 1;
+	   break;
+       case 'm':
+       	   infer_mode = MODE_MATCH;
+	   break;
+       default: /* '?' */
+	   fprintf(stderr, "Usage: %s [-d] [-m] expr [file]\n",
+		   argv[0]);
+	   exit(EXIT_FAILURE);
+       }
+    }
+
+    if (optind >= argc) {
+       fprintf(stderr, "error: missing trre expression\n");
+       exit(EXIT_FAILURE);
+    }
+
+    // printf("argc: %d\n", argc);
+    // printf("optind: %d\n", optind);
+    trre_expr = argv[optind];
+    trre_len = strlen(trre_expr);
+
+    if (optind == argc - 2) {		// filename provided
+	input_fn = argv[optind + 1];
+
+	fp = fopen(input_fn, "r");
 	if (fp == NULL) {
-	    fprintf(stderr, "error: can not open file %s\n", argv[2]);
+	    fprintf(stderr, "error: can not open file %s\n", input_fn);
 	    exit(EXIT_FAILURE);
 	}
-    } else if (argc == 2) {
+    } else
     	fp = stdin;
-    } else {
-	fprintf(stderr, "usage: trre <trregexp> <filename>\n");
-	exit(EXIT_FAILURE);
-    }
 
     prep = malloc((trre_len+1)*sizeof(uint16_t));
     if (!prep) {
         fprintf(stderr, "error: memory allocation failed\n");
         exit(EXIT_FAILURE);
     }
-    infix = malloc((trre_len+1)*sizeof(uint16_t)*2);
-    if (!prep) {
-        fprintf(stderr, "error: memory allocation failed\n");
-        exit(EXIT_FAILURE);
-    }
-    infix2 = malloc((trre_len+1)*sizeof(uint16_t)*2);
-    postfix = malloc((trre_len+1)*sizeof(uint16_t)*2);
+    infix = malloc(2*trre_len*sizeof(uint16_t));
+    postfix = malloc(2*trre_len*sizeof(uint16_t));
 
-    preprocess_escape(argv[1], prep);
+    preprocess_escape(trre_expr, prep);
     preprocess_normalize(prep, infix);
 
-    // parse_inject_cat(prep, infix);
-    // parse_iteration(infix, infix2);
+    if (debug) {
+	fprintf(stderr, "debug: infix: \t");
+	for(uint16_t *s = infix; *s != EOS; s++)
+	    fprintf(stderr, "%c", *s > 255 ? *s >> 8 : *s);
+	fprintf(stderr, "\n");
+    }
 
-    for(uint16_t *s = infix; *s != EOS; s++)
-	printf("%c", *s > 255 ? *s >> 8 : *s);
-    printf("\n");
     infix_to_postfix(infix, postfix);
-    for(uint16_t *s = postfix; *s != EOS; s++)
-	printf("%c", *s > 255 ? *s >> 8 : *s);
-    printf("\n");
+
+    if (debug) {
+	fprintf(stderr, "debug: postifix: \t");
+	for(uint16_t *s = postfix; *s != EOS; s++)
+	    fprintf(stderr, "%c", *s > 255 ? *s >> 8 : *s);
+	fprintf(stderr, "\n");
+    }
+
     state = postfix_to_nft(postfix);
 
     if(state == NULL){
@@ -610,8 +637,7 @@ int main(int argc, char **argv)
 
     while ((read = getline(&line, &input_len, fp)) != -1) {
         line[read-1] = '\0';  // is it valid?
-	infer(state, line, MODE_SCAN);
-        //printf("given: %s\n", line);
+	infer(state, line, infer_mode);
     }
 
     free(prep);
