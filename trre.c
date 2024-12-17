@@ -14,6 +14,7 @@
 #define OP_PLUS		'+' << 8
 #define OP_QUEST	'?' << 8
 #define OP_ITER		'I' << 8
+#define OP_RNG		'-' << 8
 
 #define L_PR	'(' << 8
 #define R_PR	')' << 8
@@ -91,6 +92,7 @@ int precedence(const uint16_t op) {
     switch (op) {
 	case OP_ALT:
 	    return 1;
+	case OP_RNG:
 	case OP_CAT:
 	    return 2;
 	case OP_PLUS:
@@ -105,7 +107,7 @@ int precedence(const uint16_t op) {
 }
 
 
-void parse_escape(const char *src, uint16_t *dst) {
+void preprocess_escape(const char *src, uint16_t *dst) {
     bool escape = false;
     for(; *src != '\0'; src++) {
         if (escape) {
@@ -119,26 +121,11 @@ void parse_escape(const char *src, uint16_t *dst) {
     *dst = EOS; // Terminate the destination array
 }
 
-
-void parse_inject_cat(const uint16_t *src, uint16_t *dst) {
-    int prev = 0;
-    int inside = 0;	// in-block indicator
-    for( ;*src != EOS; src++) {
-    	if (!inside) // skip [] {} blocks
-	    if ((*src < 256 || *src == ANY || *src == L_PR) && prev)
-		*dst++ = OP_CAT;
-
-	// rough approach. todo: add syntax validation.
-	if (*src == L_BR || *src == L_CB)
-	    inside = 1;
-	else if (*src == R_BR || *src == R_CB)
-	    inside = 0;
-
-	prev = (*src < 256 || *src == ANY || *src == R_PR || *src == OP_STAR || *src == OP_PLUS || *src == OP_QUEST);
-	*dst++ = *src;
-    }
-    *dst = EOS;
-}
+/* In the main cycle we restore the concatenation. Whenever we see two characters or closing parenthesis/brackets
+ * with a character we inject the CAT symbol.
+ *
+ * 
+*/
 
 
 // ugly solution. todo: re-design the logic
@@ -165,42 +152,119 @@ void normalize(const uint16_t *src, uint16_t *dst) {
 }
 */
 
+struct trre_preprocess_state {
+    int code;
+    const uint16_t *src;
+    uint16_t *dst;
+};
 
-int parse_iteration(const uint16_t *src, uint16_t *dst) {
-    int inside=0;
-    uint16_t count=0, count_g=0, count_l=0;
 
-    for(; *src != EOS; src++) {
-	if (*src == L_CB)  {
-	    inside = 1;
-	} else if (inside) {
-	    if (*src >= '0' && *src <='9') {
-		count = count*10 + *src - '0';
-	    }
-	    if (*src == ',') {
-		// todo: add a sentinel for a double comma
-		count_g = count;
-		count = 0;
-		inside += 1;
-	    }
-	    if (*src == R_CB) {
-	    	if (inside == 1) {			// one operand
-	    	    count_g = count;
-		    count_l = count;
-		} else					// two operands
-		    count_l = count;
+struct trre_preprocess_state
+parse_brackets(const uint16_t *src, uint16_t *dst) {
+    int prev = 0;
 
-		*dst++ = OP_ITER;
-		*dst++ = count_g;
-		*dst++ = count_l;
+    *dst++ = L_PR;				// brackets -> parenthesis
 
-		count = 0;
-		inside = 0;
-	    }
-	} else
+    for(src++; *src != EOS; src++) {
+    	if (*src == '-') {
+	    *dst++ = OP_RNG;
+	    prev = 0;
+    	}
+    	else if (*src == OP_COL) {
 	    *dst++ = *src;
+	    prev = 0;
+    	}
+	else if (*src < 256) {
+	    if (prev) {
+	    	*dst++ = OP_ALT;
+	    } else
+		prev = 1;
+	    *dst++ = *src;
+	}
+	else if (*src == R_BR) {
+	    *dst++ = R_PR;			// brackets -> parenthesis
+	    return (struct trre_preprocess_state){0, src, dst};
+	} else
+	    break;
+    }
+
+    return (struct trre_preprocess_state){-1, src, dst};
+}
+
+
+struct trre_preprocess_state
+parse_iteration(const uint16_t *src, uint16_t *dst) {
+    uint16_t count=0, count_g=0, count_l=0;
+    int next = 0;
+
+    for(src++; *src != EOS; src++) {		// shift {
+	if (*src >= '0' && *src <='9') {
+	    count = count*10 + *src - '0';
+	} else if (*src == ',') {
+	    // todo: add a sentinel for a double comma
+	    count_g = count;
+	    count = 0;
+	    next = 1;
+	} else if (*src == R_CB) {
+	    if (next < 1) {			// one operand
+		count_g = count;
+		count_l = count;
+	    } else				// two operands
+		count_l = count;
+
+	    *dst++ = OP_ITER;
+	    *dst++ = count_g;
+	    *dst++ = count_l;
+
+	    return (struct trre_preprocess_state){0, src, dst};
+
+	} else {
+	    break;				// syntax error
+	}
+    }
+
+    return (struct trre_preprocess_state){-1, src, dst};
+}
+
+
+int preprocess_normalize(const uint16_t *src, uint16_t *dst) {
+    int prev = 0;
+    struct trre_preprocess_state ret;
+
+    for( ;*src != EOS; src++) {
+
+	if (*src == L_CB) {
+	    ret = parse_iteration(src, dst);
+	    if (ret.code != 0) {
+		fprintf(stderr, "error: failed to parse iteration\n");
+		exit(EXIT_FAILURE);
+	    }
+	    src = ret.src;
+	    dst = ret.dst;
+	    prev = 1;				// inject cat
+	    continue;				// skip }
+	} else if (*src == L_BR) {
+	    if (prev)				// inject left cat explicitly
+		*dst++ = OP_CAT;
+	    ret = parse_brackets(src, dst);
+	    if (ret.code != 0) {
+		fprintf(stderr, "error: failed to parse brackets\n");
+		exit(EXIT_FAILURE);
+	    }
+	    src = ret.src;
+	    dst = ret.dst;
+	    prev = 1;				// inject right cat implicitly
+	    continue;				// skip ]
+	}
+
+	if ((*src < 256 || *src == ANY || *src == L_PR) && prev)
+	    *dst++ = OP_CAT;
+
+	prev = (*src < 256 || *src == ANY || *src == R_PR || *src == OP_STAR || *src == OP_PLUS || *src == OP_QUEST);
+	*dst++ = *src;
     }
     *dst = EOS;
+
     return 0;
 }
 
@@ -511,25 +575,29 @@ int main(int argc, char **argv)
 	exit(EXIT_FAILURE);
     }
 
-    trre_len = strlen(argv[1]);
-    printf("len: %ld", trre_len);
-
     prep = malloc((trre_len+1)*sizeof(uint16_t));
     if (!prep) {
         fprintf(stderr, "error: memory allocation failed\n");
         exit(EXIT_FAILURE);
     }
     infix = malloc((trre_len+1)*sizeof(uint16_t)*2);
+    if (!prep) {
+        fprintf(stderr, "error: memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
     infix2 = malloc((trre_len+1)*sizeof(uint16_t)*2);
     postfix = malloc((trre_len+1)*sizeof(uint16_t)*2);
 
-    parse_escape(argv[1], prep);
-    parse_inject_cat(prep, infix);
-    parse_iteration(infix, infix2);
-    for(uint16_t *s = infix2; *s != EOS; s++)
+    preprocess_escape(argv[1], prep);
+    preprocess_normalize(prep, infix);
+
+    // parse_inject_cat(prep, infix);
+    // parse_iteration(infix, infix2);
+
+    for(uint16_t *s = infix; *s != EOS; s++)
 	printf("%c", *s > 255 ? *s >> 8 : *s);
     printf("\n");
-    infix_to_postfix(infix2, postfix);
+    infix_to_postfix(infix, postfix);
     for(uint16_t *s = postfix; *s != EOS; s++)
 	printf("%c", *s > 255 ? *s >> 8 : *s);
     printf("\n");
