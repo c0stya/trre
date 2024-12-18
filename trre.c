@@ -30,9 +30,11 @@
 #define MAX(x,y) (((x) > (y)) ? (x) : (y))
 #define SHIFT(c) ((c) << 8)
 
-#define PUSH(stack, item) 	(*(stack)++ = (item))
-#define POP(stack) 		(*--(stack))
+// #define PUSH(stack, item) 	(*(stack)++ = (item))
+// #define POP(stack) 		(*--(stack))
 
+#define STACK_MAX_CAPACITY	1000000
+#define MAX_OUTPUT		  10000
 
 enum trre_state_type {
     ST_CHAR,
@@ -64,10 +66,48 @@ static int n_states = 0;
 #define CONS		1
 #define PROD 		2
 
-struct tr_chunk {
+struct trre_chunk {
     struct trre_state *head;
     struct trre_state *tail;
 };
+
+ssize_t stack_top 	= -1;
+ssize_t stack_capacity 	= 0;
+
+struct trre_stack_item {
+    struct trre_state *state;
+    unsigned int i;
+    unsigned int o;
+    unsigned int mode;
+};
+
+void stack_resize(struct trre_stack_item *stack, ssize_t new_capacity) {
+    stack = realloc(stack, new_capacity * sizeof(struct trre_stack_item));
+    if (stack == NULL) {
+	fprintf(stderr, "error: stack memory allocation failed\n");
+	exit(EXIT_FAILURE);
+    }
+    stack_capacity = new_capacity;
+}
+
+void stack_push(struct trre_stack_item *stack, struct trre_stack_item item) {
+    if (stack_top + 1 == stack_capacity) {
+        if (stack_capacity * 2 > STACK_MAX_CAPACITY) {
+	    fprintf(stderr, "error: stack max capacity reached\n");
+	    exit(EXIT_FAILURE);
+	}
+	stack_resize(stack, stack_capacity * 2);
+    }
+    stack[++stack_top] = item;
+}
+
+struct trre_stack_item stack_pop(struct trre_stack_item *stack) {
+    if (stack_top == -1) {
+	fprintf(stderr, "error: stack underflow\n");
+        exit(EXIT_FAILURE);
+    }
+    return stack[stack_top--];
+}
 
 
 bool is_operator(const char c) {
@@ -124,7 +164,6 @@ void preprocess_escape(const char *src, uint16_t *dst) {
 /* In the main cycle we restore the concatenation. Whenever we see two characters or closing parenthesis/brackets
  * with a character we inject the CAT symbol.
  *
- * 
 */
 
 
@@ -310,9 +349,9 @@ int infix_to_postfix(const uint16_t *src, uint16_t *dst) {
 }
 
 
-struct tr_chunk chunk(struct trre_state *head, struct trre_state *tail)
+struct trre_chunk chunk(struct trre_state *head, struct trre_state *tail)
 {
-	struct tr_chunk chnk = {head, tail};
+	struct trre_chunk chnk = {head, tail};
 	return chnk;
 }
 
@@ -333,7 +372,7 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
     struct trre_state *state, *left, *right, *prev;
     struct trre_state *state_cons, *state_prod, *state_prodcons;
     const uint16_t *c = postfix;
-    struct tr_chunk stack[10000], *stackp, ch0, ch1;
+    struct trre_chunk stack[10000], *stackp, ch0, ch1;
     int g_iter, l_iter;
 
     stackp = stack;
@@ -449,25 +488,23 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 /* Run NFA to determine whether it matches s. */
 int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode)
 {
-    struct trre_state *state=start, **states, **st;
-    int *indices, *it, i=0, o=0;
-    int mode=PRODCONS;
+    struct trre_state *state=start;
+    struct trre_stack_item *stack, stack_item;
+    int i=0, o=0, mode=PRODCONS;
     int stop=0;
-    char output[10000];
+    char output[MAX_OUTPUT];
 
-    // todo: change to the dynamic array
-    states = malloc(10 * n_states * sizeof(struct trre_state *));
-    indices = malloc(10 * (n_states) * sizeof(int));
+    stack = malloc(n_states * sizeof(struct trre_stack_item));
+    stack_top = -1;
+    stack_capacity = n_states;
 
-    st = states;
-    it = indices;
-
-    while (!stop && (state != NULL || st != states)) {
+    while (!stop && (state != NULL || stack_top > -1)) {
     	if (state == NULL) {
-	    state = POP(st);
-	    mode = POP(it);
-	    o = POP(it);
-	    i = POP(it);
+    	    stack_item = stack_pop(stack);
+	    state = stack_item.state;
+	    i = stack_item.i;
+	    o = stack_item.o;
+	    mode = stack_item.mode;
 	}
 	switch (state->type) {
 	    case(ST_CHAR):
@@ -507,19 +544,15 @@ int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode
 		break;
 	    case(ST_SPLIT):
 	    	if (state->nextb) {
-		    PUSH(st, state->nextb);
-		    PUSH(it, i);
-		    PUSH(it, o);
-		    PUSH(it, mode);
+	    	    stack_item = (struct trre_stack_item){state->nextb, i, o, mode};
+	    	    stack_push(stack, stack_item);
 		}
 		state = state->next;
 		break;
 	    case(ST_ITER):
 	    	if (state->nextc->nextb) {
-		    PUSH(st, state->nextc->nextb);
-		    PUSH(it, i);
-		    PUSH(it, o);
-		    PUSH(it, mode);
+	    	    stack_item = (struct trre_stack_item){state->nextc->nextb, i, o, mode};
+	    	    stack_push(stack, stack_item);
 		}
 	    	// re-link the connection: tail -> next gate
 	    	(state->nextb)->next = (state->nextc)->next; // res
@@ -544,9 +577,7 @@ int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode
 	    }
     }
 
-    free(states);
-    free(indices);
-
+    free(stack);
     return 0;
 }
 
