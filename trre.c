@@ -34,7 +34,7 @@
 // #define POP(stack) 		(*--(stack))
 
 #define STACK_MAX_CAPACITY	1000000
-#define MAX_OUTPUT		  10000
+#define MAX_OUTPUT		 100000
 
 enum trre_state_type {
     ST_CHAR,
@@ -71,9 +71,6 @@ struct trre_chunk {
     struct trre_state *tail;
 };
 
-ssize_t stack_top 	= -1;
-ssize_t stack_capacity 	= 0;
-
 struct trre_stack_item {
     struct trre_state *state;
     unsigned int i;
@@ -81,32 +78,56 @@ struct trre_stack_item {
     unsigned int mode;
 };
 
-void stack_resize(struct trre_stack_item *stack, ssize_t new_capacity) {
-    stack = realloc(stack, new_capacity * sizeof(struct trre_stack_item));
-    if (stack == NULL) {
+struct trre_stack {
+    struct trre_stack_item *items;
+    size_t n_items;
+    size_t capacity;
+};
+
+struct trre_stack * stack_create(size_t capacity) {
+    struct trre_stack *stack;
+
+    stack = (struct trre_stack*)malloc(sizeof(struct trre_stack));
+    stack->items = malloc(capacity * sizeof(struct trre_stack_item));
+    if (stack == NULL || stack->items == NULL) {
 	fprintf(stderr, "error: stack memory allocation failed\n");
 	exit(EXIT_FAILURE);
     }
-    stack_capacity = new_capacity;
+    stack->n_items = 0;
+    stack->capacity = capacity;
+    return stack;
 }
 
-void stack_push(struct trre_stack_item *stack, struct trre_stack_item item) {
-    if (stack_top + 1 == stack_capacity) {
-        if (stack_capacity * 2 > STACK_MAX_CAPACITY) {
+void stack_resize(struct trre_stack *stack, size_t new_capacity) {
+    stack->items = realloc(stack->items, new_capacity * sizeof(struct trre_stack_item));
+    if (stack->items == NULL) {
+	fprintf(stderr, "error: stack memory re-allocation failed\n");
+	exit(EXIT_FAILURE);
+    }
+    stack->capacity = new_capacity;
+}
+
+void stack_push(struct trre_stack *stack, struct trre_stack_item item) {
+    //printf("stack_capacity: %d, %d\n", stack->capacity, stack->n_items);
+    if (stack->n_items == stack->capacity) {
+        if (stack->capacity * 2 > STACK_MAX_CAPACITY) {
 	    fprintf(stderr, "error: stack max capacity reached\n");
 	    exit(EXIT_FAILURE);
 	}
-	stack_resize(stack, stack_capacity * 2);
+	stack_resize(stack, stack->capacity * 2);
     }
-    stack[++stack_top] = item;
+    stack->items[stack->n_items] = item;
+    stack->n_items++;
 }
 
-struct trre_stack_item stack_pop(struct trre_stack_item *stack) {
-    if (stack_top == -1) {
+struct trre_stack_item stack_pop(struct trre_stack *stack) {
+    //struct trre_stack_item == item;
+    if (stack->n_items == 0) {
 	fprintf(stderr, "error: stack underflow\n");
         exit(EXIT_FAILURE);
     }
-    return stack[stack_top--];
+    stack->n_items--;
+    return stack->items[stack->n_items];
 }
 
 
@@ -359,8 +380,14 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
     struct trre_state *state;
 
     state = malloc(sizeof(struct trre_state));
+    if (state == NULL) {
+        fprintf(stderr, "error: state memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
     state->next = next;
     state->nextb = nextb;
+    state->nextc = NULL;
     state->type = type;
 
     n_states++;
@@ -372,7 +399,7 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
     struct trre_state *state, *left, *right, *prev;
     struct trre_state *state_cons, *state_prod, *state_prodcons;
     const uint16_t *c = postfix;
-    struct trre_chunk stack[10000], *stackp, ch0, ch1;
+    struct trre_chunk stack[1000], *stackp, ch0, ch1;
     int g_iter, l_iter;
 
     stackp = stack;
@@ -486,19 +513,15 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 
 
 /* Run NFA to determine whether it matches s. */
-int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode)
+int infer_backtrack(struct trre_state *start, char *input, struct trre_stack *stack, enum trre_infer_mode infer_mode)
 {
     struct trre_state *state=start;
-    struct trre_stack_item *stack, stack_item;
+    struct trre_stack_item stack_item;
     int i=0, o=0, mode=PRODCONS;
     int stop=0;
     char output[MAX_OUTPUT];
 
-    stack = malloc(n_states * sizeof(struct trre_stack_item));
-    stack_top = -1;
-    stack_capacity = n_states;
-
-    while (!stop && (state != NULL || stack_top > -1)) {
+    while (stop == 0 && (state != NULL || stack->n_items > 0)) {
     	if (state == NULL) {
     	    stack_item = stack_pop(stack);
 	    state = stack_item.state;
@@ -577,7 +600,6 @@ int infer(struct trre_state *start, char *input, enum trre_infer_mode infer_mode
 	    }
     }
 
-    free(stack);
     return 0;
 }
 
@@ -590,6 +612,7 @@ int main(int argc, char **argv)
     ssize_t read;
     char *line = NULL, *input_fn;
     enum trre_infer_mode infer_mode = MODE_SCAN;
+    struct trre_stack *stack;
 
     uint16_t *prep, *infix, *postfix;
     struct trre_state *state;
@@ -632,19 +655,19 @@ int main(int argc, char **argv)
     } else
     	fp = stdin;
 
-    prep = malloc((trre_len+1)*sizeof(uint16_t));
+    prep = malloc((10*trre_len+1)*sizeof(uint16_t));
     if (!prep) {
         fprintf(stderr, "error: memory allocation failed\n");
         exit(EXIT_FAILURE);
     }
-    infix = malloc(2*trre_len*sizeof(uint16_t));
-    postfix = malloc(2*trre_len*sizeof(uint16_t));
+    infix = malloc(20*trre_len*sizeof(uint16_t));
+    postfix = malloc(20*trre_len*sizeof(uint16_t));
 
     preprocess_escape(trre_expr, prep);
     preprocess_normalize(prep, infix);
 
     if (debug) {
-	fprintf(stderr, "debug: infix: \t");
+	fprintf(stderr, "debug: infix: \t\t");
 	for(uint16_t *s = infix; *s != EOS; s++)
 	    fprintf(stderr, "%c", *s > 255 ? *s >> 8 : *s);
 	fprintf(stderr, "\n");
@@ -666,10 +689,16 @@ int main(int argc, char **argv)
 	exit(EXIT_FAILURE);
     }
 
+    // create a dynamic stack for backtracking
+    stack = stack_create(1024);
+
     while ((read = getline(&line, &input_len, fp)) != -1) {
         line[read-1] = '\0';  // is it valid?
-	infer(state, line, infer_mode);
+	infer_backtrack(state, line, stack, infer_mode);
     }
+
+    free(stack->items);
+    free(stack);
 
     free(prep);
     free(infix);
