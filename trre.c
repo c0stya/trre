@@ -389,6 +389,7 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
     state->nextb = nextb;
     state->nextc = NULL;
     state->type = type;
+    state->val = 0;
 
     n_states++;
 
@@ -423,10 +424,24 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    	break;
 	    case OP_QUEST:
 		ch0 = pop();
-		right = create_state(NULL, NULL, ST_JOIN);
-		left = create_state(right, ch0.head, ST_SPLIT);
-	    	ch0.tail->next = right;
-	    	push(chunk(left, right));
+		if (ch0.tail->type == ST_SPLIT) {	// a special case of greedy modifier for ST_SPLIT
+		    ch0.tail->val ^= 1;			// swap the greediness
+		    					//
+		    if (ch0.head->type == ST_ITER) {	// ok, we created a chain of states
+		    					// let's go through it and assign 'greedy' flag
+			state = ch0.head;
+			while(state != NULL && state->type != ST_SPLIT) {
+			    state->val ^= 1;
+			    state = state->nextc->next; // todo: remove the additional state
+			}
+		    }
+		    push(ch0);
+		} else {
+		    right = create_state(NULL, NULL, ST_JOIN);
+		    left = create_state(right, ch0.head, ST_SPLIT);
+		    ch0.tail->next = right;
+		    push(chunk(left, right));
+		}
 	    	break;
 	    case OP_ALT:
 	    	ch1 = pop();
@@ -450,8 +465,8 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 		    state = create_state(ch0.head, ch0.tail, ST_ITER);
 		    state->nextc = create_state(prev, NULL, ST_ITER);
 		    if (i == 0 && l_iter == 0)
-			right->nextb = state;	// *-closure
-		    if (MAX(g_iter, l_iter) - i > g_iter)
+			right->nextb = state;			// *-closure
+		    if (MAX(g_iter, l_iter) - i > g_iter) 	// passed the left border
 			(state->nextc)->nextb = right;
 		    prev = state;
 		}
@@ -566,21 +581,38 @@ int infer_backtrack(struct trre_state *start, char *input, struct trre_stack *st
 		state = state->next;
 		break;
 	    case(ST_SPLIT):
-	    	if (state->nextb) {
-	    	    stack_item = (struct trre_stack_item){state->nextb, i, o, mode};
-	    	    stack_push(stack, stack_item);
+	    	// todo: refactor the section
+	    	if (state->val) {		// greediness modifier, 0 - greedy, 1 - not greedy
+		    if (state->nextb) {
+			stack_item = (struct trre_stack_item){state->nextb, i, o, mode};
+			stack_push(stack, stack_item);
+		    }
+		    state = state->next;
+		    break;
+		} else {
+		    if (state->next) {
+			stack_item = (struct trre_stack_item){state->next, i, o, mode};
+			stack_push(stack, stack_item);
+		    }
+		    state = state->nextb;
+		    break;
 		}
-		state = state->next;
-		break;
 	    case(ST_ITER):
-	    	if (state->nextc->nextb) {
-	    	    stack_item = (struct trre_stack_item){state->nextc->nextb, i, o, mode};
-	    	    stack_push(stack, stack_item);
+		// re-link the connection: tail -> next gate
+		(state->nextb)->next = (state->nextc)->next; // res
+	    	if (!state->val) {
+		    if (state->nextc->nextb) {
+			stack_item = (struct trre_stack_item){state->nextc->nextb, i, o, mode};
+			stack_push(stack, stack_item);
+		    }
+		    state = state->next;
+		    break;
+		} else {
+		    stack_item = (struct trre_stack_item){state->next, i, o, mode};
+		    stack_push(stack, stack_item);
+		    state = state->nextc->nextb;
+		    break;
 		}
-	    	// re-link the connection: tail -> next gate
-	    	(state->nextb)->next = (state->nextc)->next; // res
-	    	state = state->next;
-		break;
 	    case(ST_JOIN):
 		state = state->next;
 		break;
@@ -693,7 +725,8 @@ int main(int argc, char **argv)
     stack = stack_create(1024);
 
     while ((read = getline(&line, &input_len, fp)) != -1) {
-        line[read-1] = '\0';  // is it valid?
+    	stack->n_items = 0; 					// reset the stack; do not shrink the capacity
+        line[read-1] = '\0';
 	infer_backtrack(state, line, stack, infer_mode);
     }
 
