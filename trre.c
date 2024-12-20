@@ -43,6 +43,7 @@ enum trre_state_type {
     ST_JOIN,
     ST_FINAL,
     ST_ITER,
+    ST_ITER_ALT,
     ST_MODE
 };
 
@@ -54,12 +55,11 @@ enum trre_infer_mode {
 struct trre_state {
     enum trre_state_type type;
     char val;
+    char valb;
     struct trre_state *next;
     struct trre_state *nextb;
-    struct trre_state *nextc;
 };
 
-// static int step_id = 0;
 static int n_states = 0;
 
 #define PRODCONS 	0
@@ -131,6 +131,13 @@ struct trre_stack_item stack_pop(struct trre_stack *stack) {
 }
 
 
+void swap_states(struct trre_state **a, struct trre_state **b) {
+    struct trre_state *tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+
+
 bool is_operator(const char c) {
     return (
     	    c == '|' ||
@@ -152,6 +159,25 @@ bool is_operator(const char c) {
 int precedence(const uint16_t op) {
     switch (op) {
 	case OP_ALT:
+	    return 0;
+	case OP_COL:
+	    return 1;
+	case OP_RNG:
+	case OP_CAT:
+	    return 2;
+	case OP_PLUS:
+	case OP_ITER:
+	case OP_STAR:
+	    return 3;
+	default:
+	    return -1;
+    }
+}
+
+/*
+int precedence(const uint16_t op) {
+    switch (op) {
+	case OP_ALT:
 	    return 1;
 	case OP_RNG:
 	case OP_CAT:
@@ -166,6 +192,7 @@ int precedence(const uint16_t op) {
 	    return -1;
     }
 }
+*/
 
 
 void preprocess_escape(const char *src, uint16_t *dst) {
@@ -181,36 +208,6 @@ void preprocess_escape(const char *src, uint16_t *dst) {
     }
     *dst = EOS; // Terminate the destination array
 }
-
-/* In the main cycle we restore the concatenation. Whenever we see two characters or closing parenthesis/brackets
- * with a character we inject the CAT symbol.
- *
-*/
-
-
-// ugly solution. todo: re-design the logic
-/*
-void normalize(const uint16_t *src, uint16_t *dst) {
-    const uint16_t *prev = NULL;
-    int prev = 0;
-    for(;;) {
-    	if ( 	((prev == NULL || (*prev != R_PR && *prev > 255)) && *src == TRD) ||	// left eps: (:a)
-    		((prev != NULL && *prev == TRD) && (*src != L_PR && *src > 255)))	// right eps: (a:)
-		    *dst++ = EPS;
-	if ( 	prev != NULL &&
-		(*src < 256 || *src == L_BR || *src == L_PR) &&
-		(*prev < 256 || *prev == R_BR || *prev == R_PR || *prev == STR || *prev == PLS || *prev == QST))
-		    *dst++ = CAT;
-	prev = src;
-	// TODO: refactor below
-	if (*src == EOS) {
-	    *dst = EOS;
-	    return;
-	}
-	*dst++ = *src++;
-    }
-}
-*/
 
 struct trre_preprocess_state {
     int code;
@@ -387,7 +384,6 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
 
     state->next = next;
     state->nextb = nextb;
-    state->nextc = NULL;
     state->type = type;
     state->val = 0;
 
@@ -396,8 +392,113 @@ struct trre_state * create_state(struct trre_state *next, struct trre_state *nex
     return state;
 }
 
+struct trre_chunk compose_star(struct trre_chunk ch0) {
+    /*
+     * STAR operator
+     *       +----------------+
+     *       |                |
+     *       v                |
+     *    +-----+    +~~~~~+  |
+     * -->|split|b-->|chunk|--+
+     *    +-----+    +~~~~~+
+     *       a
+     *       |
+     *       +------------->
+     */
+    struct trre_state *state = create_state(NULL, ch0.head, ST_SPLIT);
+    ch0.tail->next = state;
+    return chunk(state, state);
+}
+
+struct trre_chunk compose_plus(struct trre_chunk ch0) {
+    /*
+     * PLUS operator
+     *     +----------------+
+     *     |	            |
+     *     |                b
+     *     v  +~~~~~+    +-----+
+     *  ---+->|chunk|--->|split|a-->
+     *        +~~~~~+    +-----+
+     */
+    struct trre_state *state = create_state(NULL, ch0.head, ST_SPLIT);
+    ch0.tail->next = state;
+    return chunk(ch0.head, state);
+}
+
+struct trre_chunk compose_question(struct trre_chunk ch0) {
+    /*
+     * QUESTION operator
+     *          +--------------------+
+     *          |                    |
+     *          a                    v
+     *        +-----+    +~~~~~+    +-----+
+     *     -->|split|b-->|chunk|--->|join |--->
+     *        +-----+    +~~~~~+    +-----+
+     */
+
+    struct trre_state *left, *right;
+
+    right = create_state(NULL, NULL, ST_JOIN);
+    left = create_state(right, ch0.head, ST_SPLIT);
+    ch0.tail->next = right;
+    return chunk(left, right);
+}
+
+struct trre_chunk compose_iteration(struct trre_chunk ch0, int g_iter, int l_iter) {
+    /* ITERATION operator
+     *
+     *   +-------------------------+
+     * 	 |	                   |
+     * 	 b                         v
+     * 	+-----+	     +~~~~~+     +-----+
+     * 	|split|a---->|chunk|---->|join |b-------------+
+     * 	+-----+	     +~~~~~+     +-----+              |
+     * 	 ^                           a                |<-use it
+     * 	 |                           |                |to track
+     * 	 |<-----------------------+  |<-re-link       |the final state
+     * 	 |                        |  |each time       |
+     *   a                        a  v                v
+     *   +-----+	          +-----+	     +-----+
+     *   |iter |b---------------->|iter |b--->...--->|join |-->
+     *   +-----+                  +-----+            +-----+
+     */
+    struct trre_state *final, *left, *right, *prev, *cur;
+
+    final = create_state(NULL, NULL, ST_SPLIT);
+    right = create_state(NULL, final, ST_JOIN);
+
+    /*
+     * right->next is relinkable
+     * right->nextb points to the final state
+     * we do not transition explicitly to the ->nextb
+     * but use it store the link
+     */
+
+    left = create_state(ch0.head, right, ST_JOIN);
+    // use left->nextb to reach the relinkable point
+    ch0.tail->next = right;
+    prev = final;
+
+    for (int i=0; i < MAX(g_iter, l_iter); i++) {
+	if (MAX(g_iter, l_iter) > g_iter + i) 	// passed the left border
+	    cur = create_state(left, prev, ST_ITER_ALT);
+	else {
+	    cur = create_state(left, prev, ST_ITER);	// from here we can jump to the final state
+							// skipping the rest
+	}
+	// below is tricky: we do *-close with the state closes
+	if (l_iter == 0 && i == 0)
+	    final->nextb = cur;			// *-closure
+
+	prev = cur;
+    }
+
+    // do not forget the special case when
+    return chunk(prev, final);
+}
+
 struct trre_state* postfix_to_nft(const uint16_t * postfix) {
-    struct trre_state *state, *left, *right, *prev;
+    struct trre_state *state, *left, *right;
     struct trre_state *state_cons, *state_prod, *state_prodcons;
     const uint16_t *c = postfix;
     struct trre_chunk stack[1000], *stackp, ch0, ch1;
@@ -412,41 +513,39 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
     	switch(*c & 0xff00) {
 	    case OP_STAR:
 		ch0 = pop();
-		state = create_state(NULL, ch0.head, ST_SPLIT);
-		ch0.tail->next = state;
-	    	push(chunk(state, state));
+	    	push(compose_star(ch0));
 	    	break;
 	    case OP_PLUS:
 		ch0 = pop();
-		state = create_state(NULL, ch0.head, ST_SPLIT);
-		ch0.tail->next = state;
-	    	push(chunk(ch0.head, state));
+	    	push(compose_plus(ch0));
 	    	break;
 	    case OP_QUEST:
 		ch0 = pop();
-		if (ch0.tail->type == ST_SPLIT) {	// a special case of greedy modifier for ST_SPLIT
-		    ch0.tail->val ^= 1;			// swap the greediness
-		    					//
-		    if (ch0.head->type == ST_ITER) {	// ok, we created a chain of states
-		    					// let's go through it and assign 'greedy' flag
+		if (ch0.head->type == ST_SPLIT) {
+		    ch0.head->val = 1;
+		    push(ch0);
+		}
+		else if (ch0.tail->type == ST_SPLIT) {		// a special case of greedy modifier for ST_SPLIT
+		    ch0.tail->val = 1;				// disable the greediness
+
+		    if (ch0.head->type == ST_ITER || ch0.head->type == ST_ITER_ALT) {
+								// ok, we created a chain of states
+								// let's go through it and assign 'non-greedy' flag
 			state = ch0.head;
-			while(state != NULL && state->type != ST_SPLIT) {
-			    state->val ^= 1;
-			    state = state->nextc->next; // todo: remove the additional state
+			while(state != NULL && state != ch0.tail) {
+			    state->val = 1;
+			    state = state->nextb;
 			}
 		    }
 		    push(ch0);
 		} else {
-		    right = create_state(NULL, NULL, ST_JOIN);
-		    left = create_state(right, ch0.head, ST_SPLIT);
-		    ch0.tail->next = right;
-		    push(chunk(left, right));
+		    push(compose_question(ch0));
 		}
 	    	break;
 	    case OP_ALT:
 	    	ch1 = pop();
 	    	ch0 = pop();
-		left = create_state(ch0.head, ch1.head, ST_SPLIT);
+		left = create_state(ch1.head, ch0.head, ST_SPLIT);
 		right = create_state(NULL, NULL, ST_JOIN);
 		ch0.tail->next = right;
 		ch1.tail->next = right;
@@ -458,21 +557,16 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    	assert (*c != EOS);
 
 		ch0 = pop();
-		right = create_state(NULL, NULL, ST_SPLIT);
-		prev = right;
-
-		for (int i=0; i < MAX(g_iter, l_iter); i++) {
-		    state = create_state(ch0.head, ch0.tail, ST_ITER);
-		    state->nextc = create_state(prev, NULL, ST_ITER);
-		    if (i == 0 && l_iter == 0)
-			right->nextb = state;			// *-closure
-		    if (MAX(g_iter, l_iter) - i > g_iter) 	// passed the left border
-			(state->nextc)->nextb = right;
-		    prev = state;
-		}
-		push(chunk(prev, right));
+		if (g_iter == 0 && l_iter == 0)
+		    push(compose_star(ch0));
+		else if (g_iter == 0 && l_iter == 1)
+		    push(compose_question(ch0));
+		else if (g_iter == 1 && l_iter == 0)
+		    push(compose_plus(ch0));
+		else
+		    push(compose_iteration(ch0, g_iter, l_iter));
 	    	break;
-	    case OP_CAT:		// cat
+	    case OP_CAT:
 	    	ch1 = pop();
 	    	ch0 = pop();
 	    	ch0.tail->next = ch1.head;
@@ -501,7 +595,6 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 		break;
 	    case EPS:
 		state = create_state(NULL, NULL, ST_JOIN);
-		//state->val =(char)*c;
 		push(chunk(state, state));
 	    	break;
 	    default:
@@ -530,7 +623,7 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 /* Run NFA to determine whether it matches s. */
 int infer_backtrack(struct trre_state *start, char *input, struct trre_stack *stack, enum trre_infer_mode infer_mode)
 {
-    struct trre_state *state=start;
+    struct trre_state *state=start, *na, *nb;
     struct trre_stack_item stack_item;
     int i=0, o=0, mode=PRODCONS;
     int stop=0;
@@ -543,6 +636,8 @@ int infer_backtrack(struct trre_state *start, char *input, struct trre_stack *st
 	    i = stack_item.i;
 	    o = stack_item.o;
 	    mode = stack_item.mode;
+	    if (state == NULL)	// sentinel
+		continue;
 	}
 	switch (state->type) {
 	    case(ST_CHAR):
@@ -581,38 +676,28 @@ int infer_backtrack(struct trre_state *start, char *input, struct trre_stack *st
 		state = state->next;
 		break;
 	    case(ST_SPLIT):
-	    	// todo: refactor the section
-	    	if (state->val) {		// greediness modifier, 0 - greedy, 1 - not greedy
-		    if (state->nextb) {
-			stack_item = (struct trre_stack_item){state->nextb, i, o, mode};
-			stack_push(stack, stack_item);
-		    }
-		    state = state->next;
-		    break;
-		} else {
-		    if (state->next) {
-			stack_item = (struct trre_stack_item){state->next, i, o, mode};
-			stack_push(stack, stack_item);
-		    }
-		    state = state->nextb;
-		    break;
-		}
+		na = state->nextb;
+		nb = state->next;
+		if (state->val) swap_states(&na, &nb);
+		stack_push(stack, (struct trre_stack_item){nb, i, o, mode});
+		state = na;
+		break;
 	    case(ST_ITER):
 		// re-link the connection: tail -> next gate
-		(state->nextb)->next = (state->nextc)->next; // res
-	    	if (!state->val) {
-		    if (state->nextc->nextb) {
-			stack_item = (struct trre_stack_item){state->nextc->nextb, i, o, mode};
-			stack_push(stack, stack_item);
-		    }
-		    state = state->next;
-		    break;
-		} else {
-		    stack_item = (struct trre_stack_item){state->next, i, o, mode};
-		    stack_push(stack, stack_item);
-		    state = state->nextc->nextb;
-		    break;
-		}
+		// yeah, take a look at the diagram above
+		state->next->nextb->next = state->nextb;
+		state = state->next;
+		break;
+	    case(ST_ITER_ALT):
+		// re-link the connection: tail -> next gate
+		state->next->nextb->next = state->nextb;
+
+		na = state->next;
+		nb = state->next->nextb->nextb;
+		if (state->val) swap_states(&na, &nb);
+		stack_push(stack, (struct trre_stack_item){nb, i, o, mode});
+		state = na;
+		break;
 	    case(ST_JOIN):
 		state = state->next;
 		break;
@@ -651,19 +736,19 @@ int main(int argc, char **argv)
 
     int opt, debug=0;
 
-    while ((opt = getopt(argc, argv, "dm")) != -1) {
-       switch (opt) {
-       case 'd':
-	   debug = 1;
-	   break;
-       case 'm':
-       	   infer_mode = MODE_MATCH;
-	   break;
-       default: /* '?' */
-	   fprintf(stderr, "Usage: %s [-d] [-m] expr [file]\n",
-		   argv[0]);
-	   exit(EXIT_FAILURE);
-       }
+    while ((opt = getopt(argc, argv, "dg")) != -1) {
+	switch (opt) {
+	    case 'd':
+		debug = 1;
+		break;
+	    case 'g':
+		infer_mode = MODE_MATCH;
+		break;
+	    default: /* '?' */
+		fprintf(stderr, "Usage: %s [-d] [-g] expr [file]\n",
+		       argv[0]);
+		exit(EXIT_FAILURE);
+	}
     }
 
     if (optind >= argc) {
@@ -671,8 +756,6 @@ int main(int argc, char **argv)
        exit(EXIT_FAILURE);
     }
 
-    // printf("argc: %d\n", argc);
-    // printf("optind: %d\n", optind);
     trre_expr = argv[optind];
     trre_len = strlen(trre_expr);
 
