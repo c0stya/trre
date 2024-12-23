@@ -156,6 +156,7 @@ bool is_operator(const char c) {
 }
 
 
+/*
 int precedence(const uint16_t op) {
     switch (op) {
 	case OP_ALT:
@@ -173,8 +174,8 @@ int precedence(const uint16_t op) {
 	    return -1;
     }
 }
+*/
 
-/*
 int precedence(const uint16_t op) {
     switch (op) {
 	case OP_ALT:
@@ -192,7 +193,6 @@ int precedence(const uint16_t op) {
 	    return -1;
     }
 }
-*/
 
 
 void preprocess_escape(const char *src, uint16_t *dst) {
@@ -588,6 +588,13 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 
 	    	push(chunk(state_cons, state_prodcons));
 	    	break;
+	    case OP_RNG:
+	    	ch1 = pop();
+	    	ch0 = pop();
+		state = create_state(NULL, NULL, ST_CHAR);
+
+	    	printf("we are here\n");
+	    	break;
 	    case ANY:
 		state = create_state(NULL, NULL, ST_CHAR_ANY);
 		state->val = 0;
@@ -600,6 +607,7 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    default:
 		state = create_state(NULL, NULL, ST_CHAR);
 		state->val =(char)*c;
+		state->valb =(char)*c;
 		push(chunk(state, state));
 	    	break;
         }
