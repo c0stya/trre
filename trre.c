@@ -592,8 +592,6 @@ struct trre_state* postfix_to_nft(const uint16_t * postfix) {
 	    	ch1 = pop();
 	    	ch0 = pop();
 		state = create_state(NULL, NULL, ST_CHAR);
-
-	    	printf("we are here\n");
 	    	break;
 	    case ANY:
 		state = create_state(NULL, NULL, ST_CHAR_ANY);

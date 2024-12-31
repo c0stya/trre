@@ -74,7 +74,21 @@ $ trre 'c:bat|d:hog' cat dog
 bat hog 
 ```
 
+# Example
+
+To find something using TRRE we can scan and delete everything except interting part:
+
+```bash
+$ trre '<tag ..>|.:-'
+```
+
+or just using default scan
+
+```bash
+$ trre -s '<tag ..>'
+
 ## Language specification
+```
 
 Informally, we define a `trre` as a pair 'pattern_to_search':'pattern_to_replace'. The 'pattern_to_search' can be a constant string or regexp. The 'pattern_to_replace' normally is a constant string. But it can be a regex as well. But it is where things may be comlicated. We come back to this later. Moreover, we can do normal regular expression over these pairs.
 
