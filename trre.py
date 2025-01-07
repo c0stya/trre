@@ -5,7 +5,7 @@
 # []
 # eps
 
-prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, '\\': 5, '(': -1}
+prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, '\\': 5, '(': -1, '[': -1}
 
 class Node(object):
     def __init__(self, type_, val=0, left=None, right=None):
@@ -17,15 +17,13 @@ class Node(object):
 
 def reduce(opr, opd):
     op = opr.pop()
-    if op in '|.:':
+    if op in '|.:-':
         r = opd.pop()
         l = opd.pop()
-        # opd.append('(' + op + l + r + ')')
         opd.append(Node(op, 0, l, r))
     elif op in '*?+':
         l = opd.pop()
         opd.append(Node(op, 0, l))
-        #opd.append('(' + op +  l + ')')
     if op == 'I':
         rb = opd.pop()
         lb = opd.pop()
@@ -41,6 +39,34 @@ def reduce_op(op, opr, opd):
     opr.append(op)
 
 
+def parse_square_brackets(expr, i, opr, opd):
+    state = 0
+
+    while (i < len(expr)):
+        t = expr[i]
+        if state == 0:              # expect operand
+            if t in ':-[]':
+                raise SyntaxError("square brackets: unexpected symbol: {}".format(t))
+            else:
+                opd.append(Node('c', t))       # push operand
+                state = 1
+        else:                       # expect operator
+            if t in ':-':
+                reduce_op(t, opr, opd)
+                state = 0
+            elif t == "]":
+                while opr and opr[-1] != '[':
+                    reduce(opr, opd)
+                opr.pop()           # remove [ from the stack
+                return i
+            else:                   # implicit alternation
+                reduce_op('|', opr, opd)
+                i -= 1
+                state = 0
+        i+=1
+
+    raise SyntaxError("square brackets: unmached square brackets")
+
 def parse(expr):
     opr = []
     opd = []
@@ -52,8 +78,12 @@ def parse(expr):
         t = expr[i]
 
         if state == 0:                          # expect operand
-            if t in '([':
+            if t in '(':
                 opr.append(t)
+            elif t in '[':
+                opr.append(t)
+                i = parse_square_brackets(expr, i+1, opr, opd)
+                state = 1
             elif t == '\\':
                 i += 1
                 opd.append(Node('c', expr[i]))
@@ -97,20 +127,9 @@ def parse(expr):
                 state = 1
             else:
                 raise SyntaxError("unexpected symbol:", t)
-        '''
-        elif state ==  3:                       # expect curly brackets and its content
-            if t == ':':
-            elif t == '-':
-            elif t == "]":
-                state = 2
-            else:
-        '''
-
-
         i += 1
 
-    print (opr, opd)
-
+    # print (opr, opd)  #debug
     while (opr):
         reduce(opr, opd)
 
@@ -165,6 +184,19 @@ def nft(node, mode=0, greed=0):
         rhead, rtail = nft(node.right, mode=2)
         ltail.nexta = rhead
         return lhead, rtail
+    elif node.type_ == '-':
+        if node.left.type_ == 'c' and node.right.type_ == 'c':
+            lstate, _ = nft(node.left, mode)
+            rstate, _ = nft(node.right, mode)
+            join = NFTState('JOIN')
+            for i in range(l
+                split = NFTState('SPLIT', nexta=None, nextb=head)
+            split.nexta = join
+
+        elif node.left.type_ == ':' and node.right.type_ == ':':
+            pass
+        else:
+            raise SyntaxError("Unexpected range syntax")
     elif node.type_ == 'I':
         # TODO: complete the section
         '''
@@ -215,19 +247,15 @@ def infer_dfs(start, input):
         if state is None:
             state, i, o = stack.pop()
 
-        if state.type_ == 'CHAR':
-            if state.mode == 1 and i < len(input) and state.val == input[i]:
+        if state.type_ == 'CONS':
+            if i < len(input) and state.val == input[i]:
                 i += 1
-            elif state.mode == 0 and i < len(input) and state.val == input[i]:
-                output[o] = state.val
-                i+=1
-                o+=1
-            elif state.mode == 2 and i < len(input) and state.val == input[i]:
-                output[o] = state.val
-                o+=1
+                state = state.nexta
             else:
                 state = None
-                continue
+        elif state.type_ == 'PROD':
+            output[o] = state.val
+            o+=1
             state = state.nexta
         elif state.type_ == 'CHAR_ANY':
             # todo: incomplete
@@ -245,129 +273,151 @@ def infer_dfs(start, input):
             state = state.nexta
         elif state.type_ == 'FINAL':
             if len(input) == i:
-                print(output[:o])
+                return (output[:o])
             state = None
 
 
-'''
-Idea: go through all the states simultaneously.
-The additional to the NFA inference we have to keep track
-of the produced states and output strings pairs.
+"""
+init_dft_state = DftState((None, ''))
 
-The naive approach with tracking states and all
-possible outputs would require the path copy
-for each split.
+dft_state <- init_dft_state
 
+for c in string:
+    if c in next(dft_state):
+        if we have next dft state by label c, move to it
+    else:
+        take next step in NFT and get the set of NFT states
+        if set of states already exists in DFT
+            - if so, lookup for this next state
+            - else
+                - create a new one
+                - compute the longest common prefix (lcp)
+                - put the created state in the dft cache
+        link current dft state to the next dft state and use lcp as output label for transition , e.g.
+        dft_state[c] = (new_dft_state, lcp)
+        move to the next DFT state, e.g. dft_state = dft_state[c]
 
-C <- (init_state, '')
-i = 0
+return output
 
-while True:
+"""
 
-    while C is not empty:    # closure
-        s, o = C.pop()
+def step_nft(states, c):
+    S = list(states)
+    output = []
+    visited = set()
 
+    while S:
+        s, o = S.pop(0)
         if s is None:
             continue
 
-        if s == SPLIT:
-            C.push(s.nexta, o)
-            C.push(s.nextb, copy(o))
-        elif s == JOIN:
-            C.push(s.nexta, o)
-        elif s == PROD:
-            C.push(s.nexta, o+s.char)
-        elif s == CONS:
-            S.push(s, o)
-
-    if i >= len(input):
-        return
-
-    visited = set()
-    while S:
-        s, 0 = pop.S
-        if s.char == input[i] and s not in visited:
-            C.push(s.next, o)
-            visited.add(s)
-
-    i+=1
-'''
-
-def infer_bfs(start, input):
-    C = [] # closure stack
-    S = [] # step stack
-    i = 0
-
-    C.append((start, ''))
-
-    while True:
-
-        while C:
-            s, o = C.pop()
-
-            if s is None:
-                continue
-
-            if s.type_ == "SPLIT":
-                C.append((s.nexta, o))
-                C.append((s.nextb, o[:]))
-            elif s.type_ == "JOIN":
-                C.append((s.nexta, o))
-            elif s.type_ == "PROD":
-                C.append((s.nexta, o+s.val))
-            elif s.type_ == "CONS":
-                S.append((s, o))
-            elif s.type_ == "FINAL":
-                if i == len(input):
-                    print (o)
-                    return
-                C.append((s.nexta, o))
-
-        if i >= len(input):
-            return
-
-        visited = set()
-        while S:
-            s, o = S.pop(0)
-            if s.val == input[i] and (s not in visited):
-                C.append((s.nexta, o))
+        if s.type_ == "SPLIT":
+            S.append((s.nexta, o))
+            S.append((s.nextb, o[:]))
+        elif s.type_ == "JOIN":
+            S.append((s.nexta, o))
+        elif s.type_ == "PROD":
+            S.append((s.nexta, o+s.val))
+        elif c != "" and s.type_ == "CONS":
+            if c == s.val and s not in visited:
+                output.append((s, o))
                 visited.add(s)
+        elif c == "" and s.type_ == "FINAL":        # closure
+            output.append((s, o))
 
 
-class dft_state(object)
-    def __init__(
+    return output
+
+
+def longest_common_prefix(strs):
+    if not strs:
+        return ""
+
+    prefix = strs[0]  # Start with the first string as the initial prefix
+
+    for string in strs[1:]:
+        # Reduce the prefix until it matches the start of the current string
+        while not string.startswith(prefix) and prefix:
+            prefix = prefix[:-1]  # Remove the last character from prefix
+
+    return prefix
+
+
+class DftState(object):
+    def __init__(self, states):
+        self.states = states
         self.next = {}
-        self.out = ''
+        self.final = None
+        self.final_out = ""
 
 
 def infer_dft(input, dft):
-    init = DFT()
-    C = closure()
-    i = 0
+    # dft - dictionary of dft states:
+    # key:      set of reachable nft states
+    # value:    set of outputs for each nft state,
+    #           dictionary [0..255] -> dft state
 
-    dfa = {}
-    dft_state = [(id(start), ''),]
+    dft_state = dft[()]
+    out = ""
 
-    for t in input:
-        if in dft_state.next:
-            dft_state = dft_state.next[c]
+    for c in input:
+        if c in dft_state.next:
+            # print ("hit", c)
+            dft_state, oc = dft_state.next[c]
+            if dft_state is None:
+                return None
         else:
-            states = dft_step(c)
+            # print ("miss", c)
+            states = step_nft(dft_state.states, c)
+            if not states:
+                dft_state.next[c] = (None, '')         # can't make a step
+                return None
+
+            id_ = tuple(sorted(set(id(s) for s, _ in states)))
+            oc = longest_common_prefix([o for _,o in states])
+
+            if id_ and id_ in dft:
+                next_dft_state = dft[id_]
+            else:
+                next_dft_state = DftState(tuple((s.nexta, o[len(oc):]) for s, o in states))
+                dft[id_] = next_dft_state
 
 
-    for i in range():
-        if state[0]
+            dft_state.next[c] = (next_dft_state, oc)
+            dft_state = next_dft_state
+
+        out += oc
+
+    if dft_state.final is None:
+        # print("miss final")
+        states = step_nft(dft_state.states, "")   # closure
+        if states:
+            dft_state.final = True
+            dft_state.final_out = states[0][1]
+
+    if dft_state.final:
+        return out + dft_state.final_out
+    else:
+        return None
 
 
-expr = "(a:x|a:y)*c"
+#expr = "(a:x|a:y)*c"
+expr = "[a-c]*"
 root = parse(expr)
 start = create_nft(root)
+out = infer_dfs(start, 'acaaa')
+print (out)
 
-traverse(root)
-#infer_dfs(start, 'abbbcd')
-infer_bfs(start, 'aac')
+#traverse(root)
 
 '''
--a-x-b-y
--a-v-b-w
+dft = {}
+dft_start = DftState(states=[(start,'')])
+dft[()] = dft_start
+
+out = infer_dft('bc', dft)
+print (out)
+out = infer_dft('abbbbbbc', dft)
+print (out)
+print (dft)
 '''
