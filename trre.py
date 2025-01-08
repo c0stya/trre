@@ -2,8 +2,8 @@
 # original description: https://github.com/erikeidt/erikeidt.github.io/blob/master/The-Double-E-Method.md
 
 # parser todo:
-# []
-# eps
+# eps/-
+# ?
 
 prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, '\\': 5, '(': -1, '[': -1}
 
@@ -39,6 +39,29 @@ def reduce_op(op, opr, opd):
     opr.append(op)
 
 
+def parse_curly_brackets(expr, i, opr, opd):
+    state = 0
+    count_iter = 0
+
+    while (i < len(expr)):
+        t = expr[i]
+        if t >= '0' and t <= '9':
+            count_iter = count_iter*10 + int(t)
+        elif t == ',':
+            opd.append(Node('IL', count_iter))
+            count_iter = 0
+            state += 1
+        elif t == '}':
+            if state == 0:
+                opd.append(Node('IR', count_iter))
+            opd.append(Node('IR', count_iter))
+            opr.append('I')
+            return i
+        else:
+            raise SyntaxError("unexpected symbol: {}".format(t))
+        i += 1
+
+
 def parse_square_brackets(expr, i, opr, opd):
     state = 0
 
@@ -71,7 +94,6 @@ def parse(expr):
     opr = []
     opd = []
     state = 0
-    count_iter = 0
 
     i = 0
     while (i < len(expr)):
@@ -97,13 +119,14 @@ def parse(expr):
             else:
                 raise SyntaxError("near position {}, token {}".format(i, t))
         elif state ==  1:                                   # expect postfix or binary operator
-            if t in '*+?':                    # and prec[t] > prec[opr[-1]]:
+            if t in '*+?':
                 reduce_op(t, opr, opd)
             elif t in '|:':
                 reduce_op(t, opr, opd)
                 state = 0
             elif t == '{':
-                state = 2
+                i = parse_curly_brackets(expr, i+1, opr, opd)
+                state = 1
             elif t == ')':
                 while opr and opr[-1] != '(':
                     reduce(opr, opd)
@@ -114,19 +137,6 @@ def parse(expr):
                 reduce_op('.', opr, opd)
                 i -= 1
                 state = 0
-        elif state ==  2:                       # expect curly brackets and its content
-            if t >= '0' and t <= '9':
-                count_iter = count_iter*10 + int(t)
-            elif t == ',':
-                opd.append(Node('IL', count_iter))
-                count_iter = 0
-            elif t == '}':
-                opd.append(Node('IR', count_iter))
-                opr.append('I')
-                count_iter = 0
-                state = 1
-            else:
-                raise SyntaxError("unexpected symbol:", t)
         i += 1
 
     # print (opr, opd)  #debug
@@ -158,17 +168,14 @@ class NFTState(object):
 def nft(node, mode=0, greed=0):
     if node is None:
         return
-
     if node.type_ == '.':
         lhead, ltail = nft(node.left, mode)
         rhead, rtail = nft(node.right, mode)
-
         ltail.nexta = rhead
         return lhead, rtail
-    if node.type_ == '|':
+    elif node.type_ == '|':
         lhead, ltail = nft(node.left, mode)
         rhead, rtail = nft(node.right, mode)
-
         split = NFTState('SPLIT', nexta=lhead, nextb=rhead)
         join = NFTState('JOIN')
         ltail.nexta = join
@@ -186,33 +193,54 @@ def nft(node, mode=0, greed=0):
         return lhead, rtail
     elif node.type_ == '-':
         if node.left.type_ == 'c' and node.right.type_ == 'c':
-            lstate, _ = nft(node.left, mode)
-            rstate, _ = nft(node.right, mode)
             join = NFTState('JOIN')
-            for i in range(l
-                split = NFTState('SPLIT', nexta=None, nextb=head)
-            split.nexta = join
-
+            psplit = None
+            for c in range(ord(node.right.val), ord(node.left.val)-1, -1):
+                l, r =  nft(Node('c', chr(c)), mode)
+                split = NFTState('SPLIT', nexta=l, nextb=psplit)
+                r.nexta = join
+                psplit = split
+            return psplit, join
         elif node.left.type_ == ':' and node.right.type_ == ':':
-            pass
+            join = NFTState('JOIN')
+            psplit = None
+
+            llv, lrv = ord(node.left.left.val), ord(node.left.right.val)
+            rlv = ord(node.right.left.val)
+
+            for c in range(rlv-llv, -1, -1):
+                l, r =  nft(Node(':', 0, Node('c', chr(llv+c)), Node('c', chr(lrv+c))))
+                split = NFTState('SPLIT', nexta=l, nextb=psplit)
+                r.nexta = join
+                psplit = split
+            return psplit, join
         else:
             raise SyntaxError("Unexpected range syntax")
     elif node.type_ == 'I':
         # TODO: complete the section
-        '''
         lb, rb = node.val
+        head = tail = NFTState('JOIN')
 
-        #ptail = NFTState('')
-        #[s]->[] -> [s] -> []
+        for i in range(0, lb):
+            l, r = nft(node.left, mode)
+            tail.nexta = l
+            tail = r
 
-        phead, ptail = nft(node.left)
+        if rb == 0:
+            l, r = nft(Node('*', 0, left=node.left), mode)
+            tail.nexta = l
+            tail = r
+        else:
+            final = NFTState('JOIN')
+            for i in range(lb, rb):
+                l, r = nft(node.left, mode)
+                s = NFTState('SPLIT', nexta=final, nextb=l)
+                tail.nexta = s
+                tail = r
+            tail.nexta = final
+            tail = final
 
-        for i in range(rb):
-            head, tail = nft(node.left)
-            ptail.nexta = head
-            ptail = tail
-        return phead, ptail
-        '''
+        return head, tail
 
     elif node.type_ == 'c_any':
         state = NFTState('CONS', val=node.val, mode=mode)
@@ -402,11 +430,11 @@ def infer_dft(input, dft):
 
 
 #expr = "(a:x|a:y)*c"
-expr = "[a-c]*"
+expr = "a{,}:x"
 root = parse(expr)
 start = create_nft(root)
-out = infer_dfs(start, 'acaaa')
-print (out)
+out = infer_dfs(start, 'aaaaaaaaa')
+print(out)
 
 #traverse(root)
 
