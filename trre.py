@@ -5,7 +5,7 @@
 # eps/-
 # ?
 
-prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, '\\': 5, '(': -1, '[': -1}
+prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, 'g': 4, '\\': 5, '(': -1, '[': -1}
 
 class Node(object):
     def __init__(self, type_, val=0, left=None, right=None):
@@ -21,7 +21,7 @@ def reduce(opr, opd):
         r = opd.pop()
         l = opd.pop()
         opd.append(Node(op, 0, l, r))
-    elif op in '*?+':
+    elif op in '*?+g':
         l = opd.pop()
         opd.append(Node(op, 0, l))
     if op == 'I':
@@ -119,8 +119,14 @@ def parse(expr):
             else:
                 raise SyntaxError("near position {}, token {}".format(i, t))
         elif state ==  1:                                   # expect postfix or binary operator
-            if t in '*+?':
+            if t in '*+':
                 reduce_op(t, opr, opd)
+            elif t == '?':
+                if expr[i-1] in '*+?}':
+                    print (expr[i-1])
+                    reduce_op('g', opr, opd)
+                else:
+                    reduce_op(t, opr, opd)
             elif t in '|:':
                 reduce_op(t, opr, opd)
                 state = 0
@@ -183,9 +189,24 @@ def nft(node, mode=0, greed=0):
         return split, join
     elif node.type_ == '*':
         head, tail = nft(node.left, mode)
-        split = NFTState('SPLIT', nexta=None, nextb=head)
+        split = NFTState('SPLIT' if not greed else 'SPLITG', nexta=None, nextb=head)
         tail.nexta = split
         return split, split
+    elif node.type_ == '?':
+        head, tail = nft(node.left, mode)
+        join = NFTState('JOIN')
+        split = NFTState('SPLIT' if not greed else 'SPLITG', nexta=join, nextb=head)
+        tail.nexta = join
+        return split, join
+    elif node.type_ == '+':
+        head, tail = nft(node.left, mode)
+        split = NFTState('SPLIT' if not greed else 'SPLITG', nexta=None, nextb=head)
+        tail.nexta = split
+        return head, split
+    elif node.type_ == 'g':
+        print (node.left.type_)
+        3/0
+        return nft(node.left, mode, greed=1)
     elif node.type_ == ':':
         lhead, ltail = nft(node.left, mode=1)
         rhead, rtail = nft(node.right, mode=2)
@@ -220,12 +241,10 @@ def nft(node, mode=0, greed=0):
         # TODO: complete the section
         lb, rb = node.val
         head = tail = NFTState('JOIN')
-
         for i in range(0, lb):
             l, r = nft(node.left, mode)
             tail.nexta = l
             tail = r
-
         if rb == 0:
             l, r = nft(Node('*', 0, left=node.left), mode)
             tail.nexta = l
@@ -297,6 +316,9 @@ def infer_dfs(start, input):
         elif state.type_ == 'SPLIT':
             stack.append((state.nexta,  i, o))
             state = state.nextb
+        elif state.type_ == 'SPLITG':
+            stack.append((state.nextb,  i, o))
+            state = state.nexta
         elif state.type_ == 'JOIN':
             state = state.nexta
         elif state.type_ == 'FINAL':
@@ -430,10 +452,10 @@ def infer_dft(input, dft):
 
 
 #expr = "(a:x|a:y)*c"
-expr = "a{,}:x"
+expr= "a+?:x"
 root = parse(expr)
 start = create_nft(root)
-out = infer_dfs(start, 'aaaaaaaaa')
+out = infer_dfs(start, 'aaaa')
 print(out)
 
 #traverse(root)
