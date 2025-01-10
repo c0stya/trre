@@ -5,7 +5,7 @@
 # eps/-
 # ?
 
-prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, 'g': 4, '\\': 5, '(': -1, '[': -1}
+prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, 'g': 3.5, '\\': 5, '(': -1, '[': -1}
 
 class Node(object):
     def __init__(self, type_, val=0, left=None, right=None):
@@ -21,7 +21,7 @@ def reduce(opr, opd):
         r = opd.pop()
         l = opd.pop()
         opd.append(Node(op, 0, l, r))
-    elif op in '*?+g':
+    elif op in '*+?g':
         l = opd.pop()
         opd.append(Node(op, 0, l))
     if op == 'I':
@@ -110,8 +110,8 @@ def parse(expr):
                 i += 1
                 opd.append(Node('c', expr[i]))
                 state = 1
-            elif t == '.':
-                opd.append(Node('c_any', expr[i]))
+            elif t == '.':                      # any
+                opd.append(Node('a', expr[i]))
                 state = 1
             elif t not in '|*:+?()':
                 opd.append(Node('c', t))
@@ -123,7 +123,6 @@ def parse(expr):
                 reduce_op(t, opr, opd)
             elif t == '?':
                 if expr[i-1] in '*+?}':
-                    print (expr[i-1])
                     reduce_op('g', opr, opd)
                 else:
                     reduce_op(t, opr, opd)
@@ -145,10 +144,11 @@ def parse(expr):
                 state = 0
         i += 1
 
-    # print (opr, opd)  #debug
+    #print (opr, opd)  #debug
     while (opr):
         reduce(opr, opd)
 
+    #print (opr, opd)  #debug
     assert len(opd) == 1
 
     return opd[0]
@@ -157,8 +157,46 @@ def parse(expr):
 def traverse(node):
     if node is None:
         return ''
-    return (node.val if node.type_ == 'c' else node.type_) + \
-                traverse(node.left) + traverse(node.right)
+    return "(" + (node.val if node.type_ == 'c' else node.type_) + traverse(node.left) + traverse(node.right) +")"
+
+
+def plot_nft(start):
+    stack = [start]
+    visited = set()
+    items = []
+
+    def label(state):
+        if state.type_ == 'CONS':
+            return '"{}-"'.format(state.val)
+        elif state.type_ == 'PROD':
+            return '"{}+"'.format(state.val)
+        else:
+            return state.type_
+
+
+    while stack:
+        state = stack.pop()
+        visited.add(state)
+
+        if state.type_ == "FINAL":
+            items.append('"{}" [label={}, peripheries=2];'.format(id(state), label(state)))
+        else:
+            items.append('"{}" [label={}];'.format(id(state), label(state)))
+
+        if state.nexta:
+            items.append('"{}" -> "{}" [label={}];'.format(id(state), id(state.nexta), "a"))
+            if state.nexta not in visited:
+                stack.append(state.nexta)
+
+        if state.nextb:
+            items.append('"{}" -> "{}" [label={}];'.format(id(state), id(state.nextb), "b"))
+            if state.nextb not in visited:
+                stack.append(state.nextb)
+
+    return "digraph G {\n\tsplines=true; rankdir=LR;\n\t" + "\n\t".join(items) + "\n}"
+
+
+
 
 
 class NFTState(object):
@@ -189,23 +227,21 @@ def nft(node, mode=0, greed=0):
         return split, join
     elif node.type_ == '*':
         head, tail = nft(node.left, mode)
-        split = NFTState('SPLIT' if not greed else 'SPLITG', nexta=None, nextb=head)
+        split = NFTState('SPLITG' if greed else 'SPLIT', nexta=None, nextb=head)
         tail.nexta = split
         return split, split
     elif node.type_ == '?':
         head, tail = nft(node.left, mode)
         join = NFTState('JOIN')
-        split = NFTState('SPLIT' if not greed else 'SPLITG', nexta=join, nextb=head)
+        split = NFTState('SPLITG' if greed else 'SPLIT', nexta=join, nextb=head)
         tail.nexta = join
         return split, join
     elif node.type_ == '+':
         head, tail = nft(node.left, mode)
-        split = NFTState('SPLIT' if not greed else 'SPLITG', nexta=None, nextb=head)
+        split = NFTState('SPLITG' if greed else 'SPLIT', nexta=None, nextb=head)
         tail.nexta = split
         return head, split
     elif node.type_ == 'g':
-        print (node.left.type_)
-        3/0
         return nft(node.left, mode, greed=1)
     elif node.type_ == ':':
         lhead, ltail = nft(node.left, mode=1)
@@ -218,7 +254,7 @@ def nft(node, mode=0, greed=0):
             psplit = None
             for c in range(ord(node.right.val), ord(node.left.val)-1, -1):
                 l, r =  nft(Node('c', chr(c)), mode)
-                split = NFTState('SPLIT', nexta=l, nextb=psplit)
+                split = NFTState('SPLITG', nexta=l, nextb=psplit)       # change the split behavior?
                 r.nexta = join
                 psplit = split
             return psplit, join
@@ -246,14 +282,14 @@ def nft(node, mode=0, greed=0):
             tail.nexta = l
             tail = r
         if rb == 0:
-            l, r = nft(Node('*', 0, left=node.left), mode)
+            l, r = nft(Node('*', 0, left=node.left), mode, greed)
             tail.nexta = l
             tail = r
         else:
             final = NFTState('JOIN')
             for i in range(lb, rb):
                 l, r = nft(node.left, mode)
-                s = NFTState('SPLIT', nexta=final, nextb=l)
+                s = NFTState('SPLITG' if greed else 'SPLIT', nexta=final, nextb=l)
                 tail.nexta = s
                 tail = r
             tail.nexta = final
@@ -261,9 +297,9 @@ def nft(node, mode=0, greed=0):
 
         return head, tail
 
-    elif node.type_ == 'c_any':
-        state = NFTState('CONS', val=node.val, mode=mode)
-        return state, state
+    elif node.type_ == 'a':
+        #state = NFTState('CONS', val=node.val, mode=mode)
+        return nft(Node('-', left=Node('c', val=chr(0)), right=Node('c', chr(255))))
     else: # character
         if mode == 0: # consprod
             cstate = NFTState('CONS', val=node.val)
@@ -333,16 +369,15 @@ init_dft_state = DftState((None, ''))
 dft_state <- init_dft_state
 
 for c in string:
-    if c in next(dft_state):
-        if we have next dft state by label c, move to it
+    if we have next dft state by label c, move to it
     else:
         take next step in NFT and get the set of NFT states
-        if set of states already exists in DFT
-            - if so, lookup for this next state
-            - else
-                - create a new one
-                - compute the longest common prefix (lcp)
-                - put the created state in the dft cache
+        if a dft state = set of nft states already exists in DFT
+            then lookup for the next dft state
+        else
+            create a new one
+            compute the longest common prefix (lcp)
+            put the created state in the dft cache
         link current dft state to the next dft state and use lcp as output label for transition , e.g.
         dft_state[c] = (new_dft_state, lcp)
         move to the next DFT state, e.g. dft_state = dft_state[c]
@@ -351,32 +386,103 @@ return output
 
 """
 
+def step_dfs(start, input):
+    i, o = 0, 0
+    output = ['' for _ in range(1000)]
+    stack = []
+    state = start
+
+    while (stack or state):
+        if state is None:
+            state, i, o = stack.pop()
+
+        if state.type_ == 'CONS':
+            if i < len(input) and state.val == input[i]:
+                i += 1
+                state = state.nexta
+            else:
+                state = None
+        elif state.type_ == 'PROD':
+            output[o] = state.val
+            o+=1
+            state = state.nexta
+        elif state.type_ == 'SPLIT':
+            stack.append((state.nexta,  i, o))
+            state = state.nextb
+        elif state.type_ == 'SPLITG':
+            stack.append((state.nextb,  i, o))
+            state = state.nexta
+        elif state.type_ == 'JOIN':
+            state = state.nexta
+        elif state.type_ == 'FINAL':
+            if len(input) == i:
+                return (output[:o])
+            state = None
+
+
+
 def step_nft(states, c):
     S = list(states)
     output = []
     visited = set()
 
     while S:
-        s, o = S.pop(0)
+        s, o = S.pop()
         if s is None:
             continue
 
+        print ('state', s.type_, s.val)
+
         if s.type_ == "SPLIT":
+            S.append((s.nextb, o))
+            S.append((s.nexta, o[:]))
+        elif s.type_ == "SPLITG":
             S.append((s.nexta, o))
-            S.append((s.nextb, o[:]))
+            #S.append((s.nextb, o[:]))
         elif s.type_ == "JOIN":
             S.append((s.nexta, o))
         elif s.type_ == "PROD":
             S.append((s.nexta, o+s.val))
         elif c != "" and s.type_ == "CONS":
-            if c == s.val and s not in visited:
+            if c == s.val: #and s not in visited:
                 output.append((s, o))
-                visited.add(s)
+                #visited.add(s)
+        elif c == "" and s.type_ == "FINAL":        # closure
+            output.append((s, o))
+    print ('o', output)
+
+    return output
+
+
+def step_nft(states, c):
+    output = []
+
+    def step(s, o):
+        if s is None:
+            return
+        elif s.type_ == "SPLIT":
+            step(s.nextb, o)
+            step(s.nexta, o[:])
+        elif s.type_ == "SPLITG":
+            step(s.nexta, o)
+            step(s.nextb, o[:])
+        elif s.type_ == "JOIN":
+            step(s.nexta, o)
+        elif s.type_ == "PROD":
+            step(s.nexta, o+s.val)
+        elif c != "" and s.type_ == "CONS":
+            if c == s.val: #and s not in visited:
+                output.append((s, o))
         elif c == "" and s.type_ == "FINAL":        # closure
             output.append((s, o))
 
 
+    for s, o in states:
+        step(s,o)
+
     return output
+
+
 
 
 def longest_common_prefix(strs):
@@ -412,19 +518,29 @@ def infer_dft(input, dft):
 
     for c in input:
         if c in dft_state.next:
-            # print ("hit", c)
+            #print ("hit", c)
             dft_state, oc = dft_state.next[c]
             if dft_state is None:
                 return None
         else:
-            # print ("miss", c)
+            #print ("miss", c)
             states = step_nft(dft_state.states, c)
             if not states:
                 dft_state.next[c] = (None, '')         # can't make a step
                 return None
 
-            id_ = tuple(sorted(set(id(s) for s, _ in states)))
-            oc = longest_common_prefix([o for _,o in states])
+            # ugly code for filtring out states
+            visited = set()
+            id_, os = [], []
+            for s, o in states:
+                if s not in visited:
+                    os.append(o)
+                    id_.append(id(s))
+                    visited.add(s)
+
+            id_ = tuple(id_)
+
+            oc = longest_common_prefix(os)
 
             if id_ and id_ in dft:
                 next_dft_state = dft[id_]
@@ -451,23 +567,18 @@ def infer_dft(input, dft):
         return None
 
 
-#expr = "(a:x|a:y)*c"
-expr= "a+?:x"
+expr= "([a:b-y:zz:a] *)*"
+inp = 'privet murka'
 root = parse(expr)
 start = create_nft(root)
-out = infer_dfs(start, 'aaaa')
-print(out)
+out = infer_dfs(start, inp)
+print("".join(out) if out else "None")
 
-#traverse(root)
-
-'''
+start = create_nft(root)
+print(plot_nft(start))
 dft = {}
 dft_start = DftState(states=[(start,'')])
 dft[()] = dft_start
 
-out = infer_dft('bc', dft)
+out = infer_dft(inp, dft)
 print (out)
-out = infer_dft('abbbbbbc', dft)
-print (out)
-print (dft)
-'''
