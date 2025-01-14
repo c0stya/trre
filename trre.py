@@ -1,9 +1,17 @@
-# DOUBLE-E algorithm adoptation
-# original description: https://github.com/erikeidt/erikeidt.github.io/blob/master/The-Double-E-Method.md
+'''
+DOUBLE-E algorithm adoptation
+original description: https://github.com/erikeidt/erikeidt.github.io/blob/master/The-Double-E-Method.md
 
-# parser todo:
-# eps/-
-# ?
+todo:
+- decide syntax: ':' vs '<>'
+- decide precendence
+- eps/-
+- a:b:c
+'''
+
+import argparse
+import fileinput
+import sys
 
 prec = {'|': 1, '-': 2, '.': 2, ':': 3, '?': 4, '+': 4, '*': 4, 'I': 4, 'g': 3.5, '\\': 5, '(': -1, '[': -1}
 
@@ -115,6 +123,14 @@ def parse(expr):
                 state = 1
             elif t not in '|*:+?()':
                 opd.append(Node('c', t))
+                state = 1
+            elif t == ':':                      # epsilon as an implicit left operand
+                opd.append(Node('e', t))
+                i -= 1
+                state = 1
+            elif opr and opr[-1] == ':':        # epsilon as an implicit right operand
+                opd.append(Node('e', t))
+                i -= 1
                 state = 1
             else:
                 raise SyntaxError("near position {}, token {}".format(i, t))
@@ -241,9 +257,13 @@ def nft(node, mode=0, greed=0):
         split = NFTState('SPLITG' if greed else 'SPLIT', nexta=None, nextb=head)
         tail.nexta = split
         return head, split
-    elif node.type_ == 'g':
+    elif node.type_ == 'g':                                             # greed modifier
         return nft(node.left, mode, greed=1)
     elif node.type_ == ':':
+        if node.left.type_ == 'e':                                      # implicit eps left operand
+            return nft(node.right, mode=2)
+        if node.right.type_ == 'e':
+            return nft(node.left, mode=1)                               # implicit eps right operand
         lhead, ltail = nft(node.left, mode=1)
         rhead, rtail = nft(node.right, mode=2)
         ltail.nexta = rhead
@@ -298,7 +318,6 @@ def nft(node, mode=0, greed=0):
         return head, tail
 
     elif node.type_ == 'a':
-        #state = NFTState('CONS', val=node.val, mode=mode)
         return nft(Node('-', left=Node('c', val=chr(0)), right=Node('c', chr(255))))
     else: # character
         if mode == 0: # consprod
@@ -329,6 +348,8 @@ def infer_dfs(start, input):
     while (stack or state):
         if state is None:
             state, i, o = stack.pop()
+            if state is None:
+                continue
 
         if state.type_ == 'CONS':
             if i < len(input) and state.val == input[i]:
@@ -340,15 +361,6 @@ def infer_dfs(start, input):
             output[o] = state.val
             o+=1
             state = state.nexta
-        elif state.type_ == 'CHAR_ANY':
-            # todo: incomplete
-            if state.mode == 0 and i < len(input):
-                output[o] = input[i] #state.val
-                i+=1
-                o+=1
-                state = state.nexta
-            else:
-                state = None
         elif state.type_ == 'SPLIT':
             stack.append((state.nexta,  i, o))
             state = state.nextb
@@ -484,7 +496,6 @@ def step_nft(states, c):
 
 
 
-
 def longest_common_prefix(strs):
     if not strs:
         return ""
@@ -567,18 +578,45 @@ def infer_dft(input, dft):
         return None
 
 
-expr= "([a:b-y:zz:a] *)*"
-inp = 'privet murka'
-root = parse(expr)
-start = create_nft(root)
-out = infer_dfs(start, inp)
-print("".join(out) if out else "None")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("expr", help="transductive regular expression")
+    parser.add_argument("-i", "--input", help="input string", default=None)
+    parser.add_argument("-g", "--generator", action="store_true", help="generator mode")
+    parser.add_argument("-m", "--match", action="store_true", help="matching mode")
+    args = parser.parse_args()
 
-start = create_nft(root)
-print(plot_nft(start))
-dft = {}
-dft_start = DftState(states=[(start,'')])
-dft[()] = dft_start
+    #expr= "([a:b-y:zz:a] *)*"
+    #inp = 'privet murka'
 
-out = infer_dft(inp, dft)
-print (out)
+    root = parse(args.expr)
+    start = create_nft(root)
+    #print(plot_nft(start))
+
+    if args.input is None:                  # do not use 'is not args.input'!
+        for line in sys.stdin:
+            out = infer_dfs(start, line.strip())
+            if out:
+                print("".join(out))
+    else:
+        out = infer_dfs(start, args.input)
+        if out:
+            print("".join(out))
+
+    """
+
+    dft = {}
+    dft_start = DftState(states=[(start,'')])
+    dft[()] = dft_start
+
+    #out = infer_dft(args.input, dft)
+    if not args.input:
+        for line in sys.stdin:
+            out = infer_dft(line.strip(), dft)
+            if out:
+                print("".join(out))
+    else:
+        out = infer_dft(args.input, dft)
+        if out:
+            print("".join(out))
+    """
