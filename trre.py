@@ -5,8 +5,12 @@ original description: https://github.com/erikeidt/erikeidt.github.io/blob/master
 todo:
 - decide syntax: ':' vs '<>'
 - decide precendence
-- eps/-
-- a:b:c
+    a:b:d
+    a:::c
+
+    >a<b
+
+- PROBLEM: (<ab>ac)(>cde)*
 '''
 
 import argparse
@@ -61,7 +65,7 @@ def parse_curly_brackets(expr, i, opr, opd):
             state += 1
         elif t == '}':
             if state == 0:
-                opd.append(Node('IR', count_iter))
+                opd.append(Node('IL', count_iter))
             opd.append(Node('IR', count_iter))
             opr.append('I')
             return i
@@ -69,6 +73,7 @@ def parse_curly_brackets(expr, i, opr, opd):
             raise SyntaxError("unexpected symbol: {}".format(t))
         i += 1
 
+    raise SyntaxError("unmached curly brackets")
 
 def parse_square_brackets(expr, i, opr, opd):
     state = 0
@@ -121,7 +126,7 @@ def parse(expr):
             elif t == '.':                      # any
                 opd.append(Node('a', expr[i]))
                 state = 1
-            elif t not in '|*:+?()':
+            elif t not in '|*:+?(){}':
                 opd.append(Node('c', t))
                 state = 1
             elif t == ':':                      # epsilon as an implicit left operand
@@ -134,7 +139,8 @@ def parse(expr):
                 state = 1
             else:
                 raise SyntaxError("near position {}, token {}".format(i, t))
-        elif state ==  1:                                   # expect postfix or binary operator
+
+        elif state ==  1:                       # expect postfix or binary operator
             if t in '*+':
                 reduce_op(t, opr, opd)
             elif t == '?':
@@ -142,7 +148,12 @@ def parse(expr):
                     reduce_op('g', opr, opd)
                 else:
                     reduce_op(t, opr, opd)
-            elif t in '|:':
+            elif t == '|':
+                reduce_op(t, opr, opd)
+                state = 0
+            elif t == ':':
+                if i == len(expr)-1:              # implicit epsilon as a right operand
+                    opd.append(Node('e', t))
                 reduce_op(t, opr, opd)
                 state = 0
             elif t == '{':
@@ -236,7 +247,7 @@ def nft(node, mode=0, greed=0):
     elif node.type_ == '|':
         lhead, ltail = nft(node.left, mode)
         rhead, rtail = nft(node.right, mode)
-        split = NFTState('SPLIT', nexta=lhead, nextb=rhead)
+        split = NFTState('SPLITG', nexta=lhead, nextb=rhead)
         join = NFTState('JOIN')
         ltail.nexta = join
         rtail.nexta = join
@@ -591,7 +602,7 @@ if __name__ == '__main__':
 
     root = parse(args.expr)
     start = create_nft(root)
-    #print(plot_nft(start))
+    print(plot_nft(start))
 
     if args.input is None:                  # do not use 'is not args.input'!
         for line in sys.stdin:

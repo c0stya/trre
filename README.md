@@ -104,7 +104,7 @@ Where `a`,`b` any symbols in the alphabet.
 
 ## Under the hood
 
-There is well-known result. For any regular expression there exists an automaton that defines exactly the same language as regular expression. So regex engine use this fact and construct a finite state acceptor and evaluate it against an input string.
+There is well-known result that for any regular expression there exists an automaton that defines exactly the same language as regular expression. So regex engine use this fact and construct a finite state acceptor and evaluate it against an input string.
 
 Here I follow similar approach. For each transductive regular expression I construct finite state transducer and traverse it against an input string. Well, is it legal? The following small lemma justifies it.
 
@@ -129,3 +129,22 @@ a*:b = a*:ε ε:b = (a:ε)*(.:b)
 
 (a|b)* = a*|b* (NO!)
 ```
+
+# Design choices and questions
+
+There are tons of decisions to make:
+
+1. Syntax: transductions. I have chosen ':' symbol to make it look more like usual regular expressions. In some cases it is confusing. E.g. expression 'a:b:c' has no intuitive meaning in the current formulation. There can be an alternative formulation using two separate symbols, e.g. '>' and '<' to express the `consuming` and `producing` symbols. Though it would look less regex and more `diff`.
+
+2. Syntax: ':' symbol precendence. Should it be
+
+3. Syntax: implicit epsilon.
+
+
+## Future work
+
+There is a huge space for improvement.
+
+* Full unicode support
+* Efficient range processing
+* Deterministic automaton for the generator mode
