@@ -21,8 +21,8 @@ int prec(char c) {
 }
 
 struct node {
-    char type;
-    char val;
+    unsigned char type;
+    unsigned char val;
     struct node * l;
     struct node * r;
 };
@@ -33,10 +33,10 @@ struct node {
 
 #define STACK_MAX_CAPACITY	1000000
 
-static char operators[1024];
+static unsigned char operators[1024];
 static struct node *operands[1024];
 
-static char *opr = operators;
+static unsigned char *opr = operators;
 static struct node **opd = operands;
 
 static char* output;
@@ -57,15 +57,15 @@ struct node * create_node(char type, struct node *l, struct node *r) {
 }
 
 // alias-helper
-struct node * create_nodev(char type, char val) {
+struct node * create_nodev(unsigned char type, unsigned char val) {
     struct node *node = create_node(type, NULL, NULL);
     node->val = val;
     return node;
 }
 
 enum infer_mode {
-    MODE_SCAN,
-    MODE_MATCH,
+    SCAN,
+    MATCH,
 };
 
 
@@ -174,7 +174,7 @@ char* parse_square_brackets(char *expr) {
 
 
 struct node * parse(char *expr) {
-    char c;
+    unsigned char c;
     int state = 0;
 
     while ((c = *expr) != '\0') {
@@ -193,7 +193,10 @@ struct node * parse(char *expr) {
 		    state = 1;
 		    break;
 		case '.':
-		    push(opd, create_nodev('a', 0));
+		    //push(opd, create_nodev('a', 0));
+		    push(opd, create_node('-',
+		    		create_nodev('c', 0),
+		    		create_nodev('c', (unsigned char)255)));
 		    state = 1;
 		    break;
 		case ':':					// epsilon as an implicit left operand
@@ -270,6 +273,38 @@ struct node * parse(char *expr) {
 }
 
 
+void plot_ast(struct node *n) {
+    struct node *stack[1024];
+    struct node **sp = stack;
+
+    printf("digraph G {\n\tsplines=true; rankdir=TD;\n");
+
+    push(sp, n);
+    while (sp != stack) {
+        n = pop(sp);
+
+        if (n->type == 'c') {
+            //printf("ntype: %c", n->type);
+            printf("\t\"%p\" [peripheries=2, label=\"%u\"];\n", (void*)n, n->val);
+        } else {
+            printf("\t\"%p\" [label=\"%c\"];\n", (void*)n, n->type);
+        }
+
+        if (n->l) {
+            printf("\t\"%p\" -> \"%p\";\n", (void*)n, (void*)n->l);
+            push(sp, n->l);
+        }
+
+        if (n->r) {
+            printf("\t\"%p\" -> \"%p\" [label=\"%c\"];\n", (void*)n, (void*)n->r, 'r');
+            push(sp, n->r);
+        }
+    }
+    printf("}\n");
+}
+
+
+
 enum nstate_type {
     PROD,
     CONS,
@@ -305,6 +340,7 @@ struct nstate* create_nstate(enum nstate_type type, struct nstate *nexta, struct
     state->val = 0;
     return state;
 }
+
 
 
 struct nchunk {
@@ -377,7 +413,7 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 	    if (n->l->type == 'c' && n->r->type == 'c') {
 		join = create_nstate(JOIN, NULL, NULL);
 		psplit = NULL;
-		for(char c=n->r->val; c >= n->l->val; c--){
+		for(int c=n->r->val; c >= n->l->val; c--){
 		    l = nft(create_nodev('c', c), mode, 0);
 		    split = create_nstate(SPLIT, l.head, psplit);
 		    l.tail->nexta = join;
@@ -391,7 +427,7 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 		llv = n->l->l->val;
 		lrv = n->l->r->val;
 		rlv = n->r->l->val;
-		for(char c=rlv-llv; c >= 0; c--) {
+		for(int c=rlv-llv; c >= 0; c--) {
 		    l = nft(create_node(':',
 		    	    create_nodev('c', llv+c),
 		    	    create_nodev('c', lrv+c)
@@ -537,7 +573,7 @@ size_t spop(struct sstack *stack, struct nstate **s, size_t *i, size_t *o) {
 // Function to dynamically resize the output array
 char* resize_output(char *output, size_t *capacity) {
     *capacity *= 2; // Double the capacity
-    output = (char*)realloc(output, *capacity * sizeof(char));
+    output = realloc(output, *capacity * sizeof(unsigned char));
     if (!output) {
         fprintf(stderr, "error: memory reallocation failed for output\n");
         exit(EXIT_FAILURE);
@@ -546,20 +582,17 @@ char* resize_output(char *output, size_t *capacity) {
 }
 
 // Main DFS traversal function
-void infer_backtrack(struct nstate *start, char *input, struct sstack *stack, enum infer_mode mode) {
+ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack, enum infer_mode mode) {
     size_t i = 0, o = 0;
     struct nstate *s = start;
 
     while (stack->n_items || s) {
         if (!s) {
-            if (!spop(stack, &s, &i, &o)) {
-                break; // Stack is empty
-            }
+	    spop(stack, &s, &i, &o);
             if (!s) {
                 continue;
             }
         }
-
         // Resize output array if necessary
         if (o >= output_capacity - 1) {
             output = resize_output(output, &output_capacity);
@@ -590,18 +623,25 @@ void infer_backtrack(struct nstate *start, char *input, struct sstack *stack, en
                 s = s->nexta;
                 break;
             case FINAL:
-                if (input[i] == '\0') {
-                    output[o] = '\0'; // Null-terminate the output string
-                    fputs(output, stdout);
-                    fputs("\n", stdout);
-                }
-                s = NULL;
+            	if (mode == MATCH) {
+		    if (input[i] == '\0') {
+			output[o] = '\0'; // Null-terminate the output string
+			fputs(output, stdout);
+			fputs("\n", stdout);
+		    }
+		    s = NULL;
+		} else {
+		    output[o] = '\0'; // Null-terminate the output string
+		    fputs(output, stdout);
+		    return i;
+		}
                 break;
             default:
                 fprintf(stderr, "error: unknown state type\n");
                 exit(1);
         }
     }
+    return -1;
 }
 
 /*
@@ -710,27 +750,27 @@ int main(int argc, char **argv)
 {
     FILE *fp;
     char *expr;
-    ssize_t read;
+    ssize_t read, ioffset;
     size_t input_len;
-    char *line = NULL, *input_fn;
+    char *line = NULL, *input_fn, *ch;
     struct node *root;
     struct nstate *start;
     struct sstack *stack = screate(32);
-    enum infer_mode mode = MODE_SCAN;
+    enum infer_mode mode = SCAN;
 
 
     int opt, debug=0;
 
-    while ((opt = getopt(argc, argv, "dg")) != -1) {
+    while ((opt = getopt(argc, argv, "dm")) != -1) {
 	switch (opt) {
 	    case 'd':
 		debug = 1;
 		break;
-	    case 'g':
-		mode = MODE_MATCH;
+	    case 'm':
+		mode = MATCH;
 		break;
 	    default: /* '?' */
-		fprintf(stderr, "Usage: %s [-d] [-g] expr [file]\n",
+		fprintf(stderr, "Usage: %s [-d] [-m] expr [file]\n",
 		       argv[0]);
 		exit(EXIT_FAILURE);
 	}
@@ -745,11 +785,9 @@ int main(int argc, char **argv)
     root = parse(expr);
     start = create_nft(root);
 
-    start = create_nft(root);
-
+    //plot_ast(root);
     //plot_nft(start);
     //printf("%c\n", start->type);
-    //
 
     output = malloc(output_capacity*sizeof(char));
 
@@ -764,18 +802,37 @@ int main(int argc, char **argv)
     } else
     	fp = stdin;
 
-    while ((read = getline(&line, &input_len, fp)) != -1) {
-    	stack->n_items = 0; 					// reset the stack; do not shrink the capacity
-        line[read-1] = '\0';
-	infer_backtrack(start, line, stack, mode);
+    if (mode == SCAN) {
+	while ((read = getline(&line, &input_len, fp)) != -1) {
+	    stack->n_items = 0; 	// reset the stack; do not shrink the capacity
+	    line[read-1] = '\0';
+	    ch = line;
+
+	    while (*ch != '\0') {
+		ioffset = infer_backtrack(start, ch, stack, mode);
+		if (ioffset > 0)
+		    ch += ioffset;
+		else
+		    fputc(*ch++, stdout);
+	    }
+	    fputc('\n', stdout);
+
+	    /*
+	    infer_backtrack(start, line, stack, mode);
+	    */
+	}
+    } else {	/* MATCH mode and generator */
+	while ((read = getline(&line, &input_len, fp)) != -1) {
+	    stack->n_items = 0; 	// reset the stack; do not shrink the capacity
+	    line[read-1] = '\0';
+	    infer_backtrack(start, line, stack, mode);
+	    //fputc('\n', stdout);
+	}
     }
 
     fclose(fp);
     if (line)
         free(line);
-    exit(EXIT_SUCCESS);
-
     return 0;
 }
-
 
