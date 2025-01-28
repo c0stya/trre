@@ -12,10 +12,9 @@ int prec(char c) {
     	case '|': 		return 1;
     	case '-': case '.': 	return 2;
     	case ':':		return 3;
-    	case 'g':		return 4;
 	case '?': case '*':
-	case '+': case 'I': 	return 5;
-	case '\\':		return 6;
+	case '+': case 'I': 	return 4;
+	case '\\':		return 5;
     }
     return -1;
 }
@@ -69,6 +68,24 @@ enum infer_mode {
 };
 
 
+// reduce immediately
+void reduce_postfix(char op, int ng) {
+    struct node *l, *r;
+
+    switch(op) {
+	case '*': case '+': case '?':
+	    l = pop(opd);
+	    r = create_node(op, l, NULL);
+	    r->val = ng;
+	    push(opd, r);
+	    break;
+	default:
+	    fprintf(stderr, "error: unexpected postfix operator\n");
+	    exit(EXIT_FAILURE);
+    }
+}
+
+
 void reduce() {
     char op;
     struct node *l, *r;
@@ -80,20 +97,6 @@ void reduce() {
 	    l = pop(opd);
 	    push(opd, create_node(op, l, r));
 	    break;
-	case '*': case '+': case '?': case 'g':
-	    l = pop(opd);
-	    push(opd, create_node(op, l, NULL));
-	    break;
-	case 'I':
-	    r = pop(opd);
-	    l = pop(opd);
-	    l->l = pop(opd);
-	    // use right leaf as a placeholder
-	    // for the right range value
-	    l->r = r;
-	    l->type = 'I';
-	    push(opd, l);
-	    break;
 	case '(':
 	    fprintf(stderr, "error: unmached parenthesis\n");
 	    exit(EXIT_FAILURE);
@@ -102,31 +105,44 @@ void reduce() {
 
 
 void reduce_op(char op) {
-    while(opr != operators && prec(top(opr)) > prec(op))
+    while(opr != operators && prec(top(opr)) >= prec(op))
         reduce();
     push(opr, op);
 }
 
 char* parse_curly_brackets(char *expr) {
-    int state = 0;
-    int count_iter = 0;
+    int state = 0, ng = 0;
+    int count = 0, lv = 0;
+    struct node *l, *r;
     char c;
 
     while ((c = *expr) != '\0') {
         if (c >= '0' && c <= '9') {
-            count_iter = count_iter*10 + c - '0';
+            count = count*10 + c - '0';
 	} else if (c == ',') {
-            push(opd, create_nodev('L', count_iter));
-            count_iter = 0;
+            lv = count;
+            count = 0;
             state += 1;
 	} else if (c == '}') {
+	    if(*(expr+1) == '?') {			// safe to do, we have the '/0' sentinel
+		ng = 1;
+		expr++;
+	    }
             if (state == 0)
-		push(opd, create_nodev('L', count_iter));
-	    push(opd, create_nodev('R', count_iter));
-            push(opr, 'I');
+            	lv = count;
+	    else if (state > 1) {
+		fprintf(stderr, "error: more then one comma in curly brackets\n");
+		exit(EXIT_FAILURE);
+	    }
+
+	    r = create_nodev(lv, count);
+	    l = create_node('I', pop(opd), r);
+	    l->val = ng;
+	    push(opd, l);
+
             return expr;
         } else {
-	    fprintf(stderr, "error: unexpected symbol in curly brackets: %c", c);
+	    fprintf(stderr, "error: unexpected symbol in curly brackets: %c\n", c);
 	    exit(EXIT_FAILURE);
         }
         expr++;
@@ -196,7 +212,7 @@ struct node * parse(char *expr) {
 		    //push(opd, create_nodev('a', 0));
 		    push(opd, create_node('-',
 		    		create_nodev('c', 0),
-		    		create_nodev('c', (unsigned char)255)));
+		    		create_nodev('c', 255)));
 		    state = 1;
 		    break;
 		case ':':					// epsilon as an implicit left operand
@@ -219,18 +235,14 @@ struct node * parse(char *expr) {
             }
 	} else {               					// expect postfix or binary operator
 	    switch (c) {
-	    case '*': case '+':
-                reduce_op(c);
+	    case '*': case '+': case '?':
+                if(*(expr+1) == '?') {				// safe to do, we have the '/0' sentinel
+		    reduce_postfix(c, 1);			// found non-greedy modifier
+		    expr++;
+                }
+		else
+		    reduce_postfix(c, 0);
                 break;
-	    case '?':
-                switch(*(expr-1)) {
-		    case '*': case '+': case '?': case '}':
-			reduce_op('g');
-			break;
-		    default:
-			reduce_op(c);
-		}
-            	break;
             case '|':
                 reduce_op(c);
                 state = 0;
@@ -244,7 +256,6 @@ struct node * parse(char *expr) {
 		break;
             case '{':
                 expr = parse_curly_brackets(expr+1);
-                state = 1;
                 break;
             case ')':
                 while (opr != operators && top(opr) != '(')
@@ -357,7 +368,7 @@ struct nchunk chunk(struct nstate *head, struct nstate *tail) {
 }
 
 
-struct nchunk nft(struct node *n, char mode, char greed) {
+struct nchunk nft(struct node *n, char mode) {
     struct nstate *split, *psplit, *join;
     struct nstate *cstate, *pstate, *state, *head, *tail, *final;
     struct nchunk l, r;
@@ -369,44 +380,42 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 
     switch(n->type) {
 	case '.':
-	    l = nft(n->l, mode, 0);
-	    r = nft(n->r, mode, 0);
+	    l = nft(n->l, mode);
+	    r = nft(n->r, mode);
 	    l.tail->nexta = r.head;
 	    return chunk(l.head, r.tail);
 	case '|':
-	    l = nft(n->l, mode, 0);
-	    r = nft(n->r, mode, 0);
+	    l = nft(n->l, mode);
+	    r = nft(n->r, mode);
 	    split = create_nstate(SPLIT, l.head, r.head);
 	    join = create_nstate(JOIN, NULL, NULL);
 	    l.tail->nexta = join;
 	    r.tail->nexta = join;
 	    return chunk(split, join);
 	case '*':
-	    l = nft(n->l, mode, 0);
-	    split = create_nstate(greed ? SPLITNG : SPLIT, NULL, l.head);
+	    l = nft(n->l, mode);
+	    split = create_nstate(n->val ? SPLITNG : SPLIT, NULL, l.head);
 	    l.tail->nexta = split;
 	    return chunk(split, split);
 	case '?':
-	    l = nft(n->l, mode, 0);
+	    l = nft(n->l, mode);
 	    join = create_nstate(JOIN, NULL, NULL);
-	    split = create_nstate(greed ? SPLITNG : SPLIT, join, l.head);
+	    split = create_nstate(n->val ? SPLITNG : SPLIT, join, l.head);
 	    l.tail->nexta = join;
 	    return chunk(split, join);
 	case '+':
-	    l = nft(n->l, mode, 0);
-	    split = create_nstate(greed ? SPLITNG : SPLIT, NULL, l.head);
+	    l = nft(n->l, mode);
+	    split = create_nstate(n->val ? SPLITNG : SPLIT, NULL, l.head);
 	    l.tail->nexta = split;
 	    return chunk(l.head, split);
-	case 'g':
-	    return nft(n->l, mode, 1);
 	case ':':
 	    if (n->l->type == 'e') // implicit eps left operand
-	    	return nft(n->r, 2, 0);
+	    	return nft(n->r, 2);
 	    if (n->r->type == 'e')
-		return nft(n->l, 1, 0);
+		return nft(n->l, 1);
 	    // implicit eps right operand
-	    l = nft(n->l, 1, 0);
-	    r = nft(n->r, 2, 0);
+	    l = nft(n->l, 1);
+	    r = nft(n->r, 2);
 	    l.tail->nexta = r.head;
 	    return chunk(l.head, r.tail);
 	case '-':
@@ -414,7 +423,7 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 		join = create_nstate(JOIN, NULL, NULL);
 		psplit = NULL;
 		for(int c=n->r->val; c >= n->l->val; c--){
-		    l = nft(create_nodev('c', c), mode, 0);
+		    l = nft(create_nodev('c', c), mode);
 		    split = create_nstate(SPLIT, l.head, psplit);
 		    l.tail->nexta = join;
 		    psplit = split;
@@ -431,7 +440,7 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 		    l = nft(create_node(':',
 		    	    create_nodev('c', llv+c),
 		    	    create_nodev('c', lrv+c)
-		    	    ), mode, 0);
+		    	    ), mode);
 		    split = create_nstate(SPLIT, l.head, psplit);
 		    l.tail->nexta = join;
 		    psplit = split;
@@ -443,25 +452,26 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 		exit(EXIT_FAILURE);
 	    }
 	case 'I':
-	    lb = n->val;
-	    rb = n->r->val;
+	    lb = n->r->type;		/* placeholder for the left range */
+	    rb = n->r->val;		/* placeholder for the right range */
 	    head = tail = create_nstate(JOIN, NULL, NULL);
 
 	    for(int i=0; i <lb; i++) {
-		l = nft(n->l, mode, 0);
+		l = nft(n->l, mode);
 		tail->nexta = l.head;
 		tail = l.tail;
 	    }
 
 	    if(rb == 0) {
-		l = nft(create_node('*', n->l, NULL), mode, 0);
+		l = nft(create_node('*', n->l, NULL), mode);
 		tail->nexta = l.head;
 		tail = l.tail;
 	    } else {
 		final = create_nstate(JOIN, NULL, NULL);
 		for(int i=lb; i < rb; i++) {
-		    l = nft(n->l, mode, 0);
-		    tail->nexta = create_nstate(greed ? SPLITNG : SPLIT, final, l.head);
+		    l = nft(n->l, mode);
+		    // TODO: add non-greed modifier
+		    tail->nexta = create_nstate(n->val ? SPLITNG : SPLIT, final, l.head);
 		    tail = l.tail;
 		}
 		tail->nexta = final;
@@ -469,12 +479,6 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 	    }
 
 	    return chunk(head, tail);
-
-	case 'a':
-	    return nft(create_node('-',
-	    	    create_nodev('c', 0), create_nodev('c', (char)255)),
-	    	    mode, 0);
-
 	default: 	 	//character
 	    if (mode == 0) {
 		cstate = create_nstate(CONS, NULL, NULL);
@@ -497,7 +501,7 @@ struct nchunk nft(struct node *n, char mode, char greed) {
 
 struct nstate* create_nft(struct node *root) {
     struct nstate *final = create_nstate(FINAL, NULL, NULL);
-    struct nchunk ch = nft(root, 0, 0);
+    struct nchunk ch = nft(root, 0);
     ch.tail->nexta = final;
     return ch.head;
 }
@@ -573,7 +577,7 @@ size_t spop(struct sstack *stack, struct nstate **s, size_t *i, size_t *o) {
 // Function to dynamically resize the output array
 char* resize_output(char *output, size_t *capacity) {
     *capacity *= 2; // Double the capacity
-    output = realloc(output, *capacity * sizeof(unsigned char));
+    output = realloc(output, *capacity * sizeof(char));
     if (!output) {
         fprintf(stderr, "error: memory reallocation failed for output\n");
         exit(EXIT_FAILURE);
@@ -783,10 +787,13 @@ int main(int argc, char **argv)
 
     expr = argv[optind];
     root = parse(expr);
-    start = create_nft(root);
 
-    //plot_ast(root);
-    //plot_nft(start);
+    if (debug) {
+	plot_ast(root);
+	//plot_nft(start);
+    }
+
+    start = create_nft(root);
     //printf("%c\n", start->type);
 
     output = malloc(output_capacity*sizeof(char));
