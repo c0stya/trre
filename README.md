@@ -1,63 +1,73 @@
 # TRRE: transductive regular expressions
 
+#### TLDR: an extension of the regular expressions for text editing and a `grep`-like command line tool
+#### It is a prototype. Do not use it in production.
+
 ## Intro
 
-Regular expressions is a great tool for searching patterns in text. But I always found it unnatural for text editing. You have to use groups or meta-regex techniques. Here I propose a simple extension to the regular expression language for the purpose of patter matching and text modification. I call it transductive regular expressions or simply `trre`.
+Regular expressions is a great tool for searching patterns in text. But I always found it unnatural for text editing. The *group* logic works as a post-processor and can be complicated.
 
-It is similar to the classical regexp with addtional symbol ":". So the simplest form of trre is "A:B" where A, B are strings. E.g. 'a:b' will translate symbol 'a' into symbol 'b'. I call this pair a `transductive pair` or `transduction`.
+. like in (sed editor)[https://www.gnu.org/software/sed/manual/sed.html]. Here I propose an extension to the regular expression language for pattern matching and text modification. I call it transductive regular expressions or simply `trre`.
 
-Let's see more examples.
+It is similar to the normal regex language with addtional of symbol `:`. The simplest form of `trre` is `a:b` where `a`, `b` are characters. It will change symbol 'a' to symbol 'b'. I call this pair a `transductive pair` or simply `transduction`.
 
-## Examples
+To demonstrate the concept there is a command line tool `trre`. It feels similar to the `grep -E` command.
+
+## Examples: basics
 
 To change `cat` to `dog` we can write the following transductive regular expression:
 
 ```bash
-$ trre 'c:da:ot:g' 'cat'
+$ echo 'cat' | trre 'c:da:ot:g'
 dog
 ```
 
-We can write the same in more intuitive way:
+We can write the same in a more readable way:
 
 ```bash
-$ trre '(cat):(dog)' 'cat'
+$ echo 'cat' | trre '(cat):(dog)'
 dog
 ```
 
-Next, we can use it like sed to scan through string and replace the match:
+Next, we can use it like `sed` to scan through a string and replace all the matches:
 
 ```bash
-$ trre '(lamb):(cat)' 'Mary had a little lamb.'
+$ echo 'Mary had a little lamb.' | trre '(lamb):(cat)'
 Mary had a little cat
 ```
 
-Let's delete something:
+**Deletion:**
 
 ```bash
-$ '(bob:)cat' 'bobcat'
+$ echo 'xor' | '(x:)or' 'xor'
 cat
 ```
 
-I used the construction of `(bob:)` to translate `bob` to the empty string.
+The construction of `(x:)` could be interpreted as of translation of `x` to an empty string.
 
-Let's insert something:
+**Insertion:**
 
 ```bash
-$ '(:bob)cat' 'cat'
-bobcat
+$ echo 'or' | ./trre '(:x)or'
+xor
 ```
 
-I used the construction of `(:bob)` to translate `bob` to the empty string.
+We could think of the construction `(x:)` as of changing empty string into `x`.
+
+
+## Examples: regex over transductions
+
+As for regular expression we could use **alternations** using `|` symbol:
 
 ```bash
-$ 'cat:bobcat' 'cat'
-bobcat
+$ echo 'cat dog' | trre 'c:bat|d:hog'
+bat hog
 ```
 
-Ok. Now let's add regular expression over the transductions:
+Star over `trre`:Ok. Now let's add regular expression over the transductions:
 
 ```bash
-$ trre '(cat:dog)+' 'catcatcat'
+$ trre '(cat:dog)*' 'catcatcat'
 dogdogdog
 
 ```bash
@@ -65,30 +75,7 @@ $ trre '(cat)+:(dog)' 'catcatcat'
 dog
 ```
 
-It would take some time to get comfortable with `trre`. But the logic behind is simple and straightforward.
-
-Alteration over `trre`:
-
-```bash
-$ trre 'c:bat|d:hog' cat dog
-bat hog 
-```
-
-# Example
-
-To find something using TRRE we can scan and delete everything except interting part:
-
-```bash
-$ trre '<tag ..>|.:-'
-```
-
-or just using default scan
-
-```bash
-$ trre -s '<tag ..>'
-
 ## Language specification
-```
 
 Informally, we define a `trre` as a pair 'pattern_to_search':'pattern_to_replace'. The 'pattern_to_search' can be a constant string or regexp. The 'pattern_to_replace' normally is a constant string. But it can be a regex as well. But it is where things may be comlicated. We come back to this later. Moreover, we can do normal regular expression over these pairs.
 
@@ -102,35 +89,25 @@ regex      <- a a* a.b a|b a*
 
 Where `a`,`b` any symbols in the alphabet.
 
-## Under the hood
+## Why it works
 
-There is well-known result that for any regular expression there exists an automaton that defines exactly the same language as regular expression. So regex engine use this fact and construct a finite state acceptor and evaluate it against an input string.
 
-Here I follow similar approach. For each transductive regular expression I construct finite state transducer and traverse it against an input string. Well, is it legal? The following small lemma justifies it.
+Under the hood we construct the special automaton that is equivalent to a given transductive expression. The idea behind `trre` is very similar to regular expressions. But there are some different key elements:
 
-Lemma. For each transductive regular expression R there exists a finite state state transducer T such Language(R) = Language(T). It is true in other direction as well.
+* `trre` defines a binary relation on a pair of regular languages
+* Instead of `finite state acceptor` (`FSA`) we use `finite state transducer` (`FST`) as underlying inference engine
+* Like in many modern `re` engines we construct a deterministic automata on the fly. The difference here is that we construct (non)deterministic `FST` whenever it is possible.
 
-Proof. TBD.
+To justify the laguage of trunsductive regular expression we need:
 
-## Formalities
+1. Define the `trre` language formaly
+2. Set up the correspondance between underlying automata
+3. Find efficient inference algorithm to process an input string
 
-Formally, the proposed language is a direct product of a pair of the Kleene algebra with 1 denoted as〈ε,ε〉and 0 denoted as〈∅,∅〉. Which itself is a Kleene algebra.
+The sketch of a proof you can find in this document: [theory.pdf](theory.pdf). 
 
-Some equalities that directly follow from Kleene algebra properties:
-```
-(a:x)(b:y) = (ab):(xy) = (ab:)(:xy)
 
-(a|b):x = a:x|b:x
-a:(x|y) = a:x|a:y
-
-a:x = a:ε ε:x = ε:x a:ε
-a*:ε =(ε|a|aa|aa|...):ε = ε:ε|a:ε|aa:ε|aaa:ε|... = ε:ε|a:ε|aa:εε|aaa:εεε|. = (a:ε)*
-a*:b = a*:ε ε:b = (a:ε)*(.:b)
-
-(a|b)* = a*|b* (NO!)
-```
-
-# Design choices and questions
+## Design choices and open questions
 
 There are tons of decisions to make:
 
@@ -141,10 +118,11 @@ There are tons of decisions to make:
 3. Syntax: implicit epsilon.
 
 
-## Future work
+## TODO
 
-There is a huge space for improvement.
-
+* Complete the ERE feature set:
+    - negation `^` within square brackets
+    - character classes
 * Full unicode support
 * Efficient range processing
 * Deterministic automaton for the generator mode

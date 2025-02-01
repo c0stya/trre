@@ -424,7 +424,7 @@ struct nchunk nft(struct node *n, char mode) {
 		psplit = NULL;
 		for(int c=n->r->val; c >= n->l->val; c--){
 		    l = nft(create_nodev('c', c), mode);
-		    split = create_nstate(SPLIT, l.head, psplit);
+		    split = create_nstate(SPLITNG, l.head, psplit);
 		    l.tail->nexta = join;
 		    psplit = split;
 		}
@@ -441,7 +441,7 @@ struct nchunk nft(struct node *n, char mode) {
 		    	    create_nodev('c', llv+c),
 		    	    create_nodev('c', lrv+c)
 		    	    ), mode);
-		    split = create_nstate(SPLIT, l.head, psplit);
+		    split = create_nstate(SPLITNG, l.head, psplit);
 		    l.tail->nexta = join;
 		    psplit = split;
 		}

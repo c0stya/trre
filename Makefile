@@ -3,8 +3,8 @@ CFLAGS = -Wall -Wextra -Wpedantic -o0 -g
 
 all: trre
 
-trre: trre.c
-	$(CC) $(CFLAGS) trre.c -o trre
+trre: trre_dft.c
+	$(CC) $(CFLAGS) trre_dft.c -o trre
 
 clean:
 	rm -f trre

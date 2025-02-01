@@ -499,11 +499,22 @@ struct nchunk nft(struct node *n, char mode) {
     }
 }
 
+/*
 struct nstate* create_nft(struct node *root) {
     struct nstate *final = create_nstate(FINAL, NULL, NULL);
     struct nchunk ch = nft(root, 0);
     ch.tail->nexta = final;
     return ch.head;
+}
+*/
+
+struct nstate* create_nft(struct node *root) {
+    struct nstate *final = create_nstate(FINAL, NULL, NULL);
+    struct nstate *init = create_nstate(JOIN, NULL, NULL);
+    struct nchunk ch = nft(root, 0);
+    ch.tail->nexta = final;
+    init->nexta = ch.head;
+    return init;
 }
 
 struct sitem {
@@ -732,6 +743,23 @@ struct str * str_append(struct str *s, char c) {
     return s;
 }
 
+char str_popleft(struct str *s) {
+    char c;
+    struct str_item *tmp;
+
+    if (s->head == NULL) {
+	fprintf(stderr, "error: string underflow\n");
+    	exit(EXIT_FAILURE);
+    }
+
+    c = s->head->c;
+    tmp = s->head;
+    s->head = s->head->next;
+    free(tmp);
+
+    return c;
+}
+
 struct str * str_append_str(struct str *dst, struct str *src) {
     for(struct str_item *si = src->head; si != NULL; si = si->next) {
     	str_append(dst, si->c);
@@ -741,10 +769,19 @@ struct str * str_append_str(struct str *dst, struct str *src) {
 
 struct str * str_copy(struct str* src) {
     struct str *dst = str_create();
+    assert(src);
+
     for(struct str_item *si = src->head; si != NULL; si = si->next) {
     	str_append(dst, si->c);
     }
     return dst;
+}
+
+
+void str_print(struct str *s) {
+    assert(s);
+    for(struct str_item *si=s->head; si != NULL; si=si->next)
+    	fputc(si->c, stdout);
 }
 
 struct slist {
@@ -770,6 +807,8 @@ struct slist *slist_append(struct slist *sl, struct nstate *state, struct str *s
 }
 
 
+
+
 struct slist * nft_step(struct nstate *s, struct str *o, unsigned char c, struct slist *sl) {
     /* Given the nstate and the corresponding suffix traverse
      * the nft automaton to reach the CONS states. Keep track
@@ -779,10 +818,11 @@ struct slist * nft_step(struct nstate *s, struct str *o, unsigned char c, struct
      *
      */
 
+    assert(s);
     // todo: change to the number of states
     struct nstate *state_stack[1024];
-    struct str *str_stack[1024];
     struct nstate **sp = state_stack;
+    struct str *str_stack[1024];
     struct str **cp = str_stack;
 
     push(sp, s);
@@ -822,7 +862,8 @@ struct slist * nft_step(struct nstate *s, struct str *o, unsigned char c, struct
 		}
 		break;
 	    case FINAL:
-		sl = slist_append(sl, s, o);
+	    	if(c == '\0')	/* final states closure */
+		    sl = slist_append(sl, s, o);
 	    	break;
 	}
     }
@@ -833,6 +874,8 @@ struct slist * nft_step(struct nstate *s, struct str *o, unsigned char c, struct
 
 struct dstate {
     struct slist *states;
+    struct str *final_out;
+    int8_t final;
     struct str *out[256];
     struct dstate *next[256];
 };
@@ -841,21 +884,41 @@ struct dstate * dstate_create(struct slist *states) {
     struct dstate *ds;
     ds = malloc(sizeof(struct dstate));
     ds->states = states;
+    ds->final = -1;
     memset(ds->next, 0, sizeof ds->next);
     memset(ds->out, 0, sizeof ds->out);
     return ds;
 }
 
+struct str * truncate_lcp(struct slist * sl) {
+    struct str *lcp, *prefix = str_create();
+
+    /* if we have a single state; thus the whole string is a prefix */
+    if (sl->next == NULL) {
+    	/* swap strings */
+    	lcp = sl->suffix;
+    	sl->suffix = prefix;
+    	return lcp;
+    }
+
+    for(;;) {
+    	if (sl->suffix->next)
+	for(struct slist *li=states; li; li=li->next) {
+	    s = li->out;
+	}
+    }
+    return prefix;
+}
+
 int infer_dft(struct dstate *ds, unsigned char *inp) {
     struct dstate *ds_next;
-    struct str *out;
     struct slist *sl, *sl_head;
+    struct str *out = str_create();
 
     for(unsigned char *c=inp; *c != '\0'; c++) {
-	if (ds->next[*c] != NULL) {
-	    ds_next = ds->next[*c];
-	    // put output to a buffer
+	if (ds->next[*c] != NULL) {				/
 	    str_append_str(out, ds->out[*c]);
+	    ds_next = ds->next[*c];
 	}
 	else if (ds->out[*c] == NULL) {				/* not explored */
 	    sl_head = slist_create(NULL, NULL);			/* dummy node */
@@ -864,38 +927,56 @@ int infer_dft(struct dstate *ds, unsigned char *inp) {
 	    /* expand each state and accumulate CONS states labeled with c */
 	    for(struct slist *li=ds->states; li; li=li->next) {
 		/* return a pointer to the latest item */
-		sl = nft_step(li->state, str_copy(li->suffix), *c, sl);
+		sl = nft_step(li->state->nexta, str_copy(li->suffix), *c, sl);
 	    }
 	    if (sl_head == sl) {				/* got empty list; mark as explored and exit */
+	    	//printf("found nothing\n");
 	    	ds->out[*c] = (struct str*)1;			/* fixme: can we create a better indicator? */
 	    	return 0;
 	    }
 
-	    //prefix = lcp (sl_next);
-
-	    /* lookup in the dstate cache */
-	    /* if found
-	     * 	- assign transition state
-	     * 	- assign transition string
-	     * 	- move to this state (ds = ds_next)
-	     * else
-	     *  - create a dstate with a corresponding set of states and suffixes (slist)
-	     *  - put the dstate to the dcache using slist as a key
-	     * 	- move to this state (ds = ds_next)
-	     */
+	    struct str *prefix = truncate_lcp(sl_head->next);
+	    //str_print(prefix);
+	    //printf("\n");
 
 	    if (0) { //(ds_next = btree_lookup(dcache, sl_head->next)) != NULL) {
 	    	ds->next[*c] = ds_next;
-	    	ds->out[*c] = NULL; //prefix;
+	    	ds->out[*c] = prefix; //prefix;
 	    } else {
 	    	ds_next = dstate_create(sl_head->next);
 	    	ds->next[*c] = ds_next;
-	    	ds->out[*c] = NULL; //prefix;
+	    	ds->out[*c] = prefix; //prefix;
 	    }
+	    str_append_str(out, ds->out[*c]);
 	    ds = ds_next;
-
 	}
     }
+
+    /* Lazily check for the final state and the final state output. */
+    if (ds->final < 0) {					/* unexplored */
+	sl_head = slist_create(NULL, NULL);			/* dummy node */
+	sl = sl_head;
+
+	for(struct slist *li=ds->states; li; li=li->next) {
+	    /* return a pointer to the latest item */
+	    sl = nft_step(li->state->nexta, str_copy(li->suffix), '\0', sl);
+	}
+	if (sl_head != sl) {				/* got final states; take the first one */
+	    ds->final = 1;
+	    ds->final_out = sl_head->next->suffix;
+	} else {
+	    ds->final = 0;
+	}
+    }
+
+    if (ds->final == 1) {
+    	/* output the result */
+    	printf("out: ");
+	str_print(out);
+	str_print(ds->final_out);
+	printf("\n");
+    }
+
     return 0;
 }
 
@@ -938,12 +1019,13 @@ int main(int argc, char **argv)
     expr = argv[optind];
     root = parse(expr);
 
+    start = create_nft(root);
+
     if (debug) {
-	plot_ast(root);
-	//plot_nft(start);
+	//plot_ast(root);
+	plot_nft(start);
     }
 
-    start = create_nft(root);
     //printf("%c\n", start->type);
 
     // todo: can we do better?
@@ -996,4 +1078,3 @@ int main(int argc, char **argv)
         free(line);
     return 0;
 }
-
