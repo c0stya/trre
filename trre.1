@@ -1,0 +1,34 @@
+.\" Process this file with
+.\" groff -man -Tascii foo.1
+.\"
+.TH TRRE 1 "User Commands"
+.SH NAME
+trre \- stream text editor based on transductive regular expressions
+.SH SYNOPSIS
+.B trre [-s]
+.I PATTERN
+.B [
+.I FILE
+.B ]
+.SH DESCRIPTION
+.B trre
+performs text transformation according to the transductive regular expression
+.I PATTERN
+Like another stream editor
+.BR sed (1)
+it makes one pass over the input. The transformation completely defined by the transductive pattern.
+.SH OPTIONS
+.IP -s
+Use strict generation mode. It means the number of input lines is equal to the number of output lines.
+.SH EXAMPLES
+.IP "trre c:da:ot:g cat"
+transforms word "cat" to "dog"
+.IP "trre (cat):(dog) cat"
+transforms word "cat" to "dog"
+.SH BUGS
+It is an experimental command. Use with caution and care.
+.SH AUTHOR
+Konstantin Selivanov <konstantin dot selivanov at >
+.SH "SEE ALSO"
+.BR sed (1),
+.BR tr (1)
