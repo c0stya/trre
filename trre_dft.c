@@ -752,10 +752,17 @@ char str_popleft(struct str *s) {
     	exit(EXIT_FAILURE);
     }
 
+    // question: what if s->head == s->tail ??
     c = s->head->c;
-    tmp = s->head;
-    s->head = s->head->next;
-    free(tmp);
+
+    if (s->head == s->tail) {
+    	free(s->head);
+    	s->head = s->tail = NULL;
+    } else {
+	tmp = s->head;
+	s->head = s->head->next;
+	free(tmp);
+    }
 
     return c;
 }
@@ -775,6 +782,19 @@ struct str * str_copy(struct str* src) {
     	str_append(dst, si->c);
     }
     return dst;
+}
+
+void str_free(struct str* s) {
+    struct str_item *si, *next;
+    if (!s) return;
+
+    for(si = s->head; si != NULL;) {
+    	next = si->next;
+    	free(si);
+    	si = next;
+    }
+    free(s);
+    s = NULL;
 }
 
 
@@ -890,33 +910,113 @@ struct dstate * dstate_create(struct slist *states) {
     return ds;
 }
 
-struct str * truncate_lcp(struct slist * sl) {
-    struct str *lcp, *prefix = str_create();
-
-    /* if we have a single state; thus the whole string is a prefix */
-    if (sl->next == NULL) {
-    	/* swap strings */
-    	lcp = sl->suffix;
-    	sl->suffix = prefix;
-    	return lcp;
-    }
+struct str * truncate_lcp(struct slist * sl, struct str *prefix) {
+    char ch;
 
     for(;;) {
-    	if (sl->suffix->next)
-	for(struct slist *li=states; li; li=li->next) {
-	    s = li->out;
+    	if(!sl->suffix->head) 			/* end of lcp */
+    	    return prefix;
+
+    	ch = sl->suffix->head->c;
+	for(struct slist *li=sl; li; li=li->next) {
+	    if (!li->suffix || !li->suffix->head || li->suffix->head->c != ch)
+		return prefix;
 	}
+
+	/* we found the common char,
+	 * - add the char to the prefix,
+	 * - truncate the suffixes */
+	str_append(prefix, ch);
+	for(struct slist *li=sl; li; li=li->next)
+	    str_popleft(li->suffix);
     }
     return prefix;
+}
+
+// Define the structure for the tree node
+struct btnode {
+    struct nstate *s;
+    struct btnode* l;
+    struct btnode* r;
+};
+
+// Function to create a new node with given data
+struct btnode* bt_create(struct nstate * s) {
+    struct btnode* node = malloc(sizeof(struct btnode));
+    if (node == NULL) {
+        printf("error: binary tree node allocation failed.\n");
+	exit(EXIT_FAILURE);
+    }
+    node->s = s;
+    node->l = NULL;
+    node->r = NULL;
+    return node;
+}
+
+// Lookup function to search for a value in the binary tree
+struct btnode* bt_lookup(struct btnode* n, struct nstate *s) {
+    while (n != NULL)
+        if (s < n->s)
+            n = n->l;
+        else if (s > n->s)
+            n = n->r;
+        else
+            return n; // Value found
+    return NULL;
+}
+
+// Function to insert nodes to form a binary search tree
+struct btnode* bt_insert(struct btnode* root, struct nstate *s) {
+    if (root == NULL)
+        return bt_create(s);
+    if (s < root->s) {
+        root->l = bt_insert(root->l, s);
+    } else if (s > root->s) {
+        root->r = bt_insert(root->r, s);
+    }
+    return root;
+}
+
+void bt_free(struct btnode* root) {
+    if (root == NULL) return;
+    bt_free(root->l);
+    bt_free(root->r);
+    free(root);
+}
+
+void remove_duplicates(struct slist *sl) {
+    struct btnode *bt = NULL;
+    assert(sl);
+
+    for(struct slist *li=sl, *li_prev=NULL; li; li=li->next) {
+    	if (!bt) {
+	    bt = bt_insert(bt, li->state);
+	    li_prev = li;
+	}
+	else {
+	    if(bt_lookup(bt, li->state)) {	/* remove the element from the list */
+	    	assert(li_prev);		/* we always have the element */
+		li_prev->next = li->next;
+	    	free(li);
+	    } else {
+		bt_insert(bt, li->state);
+		li_prev = li;
+	    }
+	}
+    }
+    bt_free(bt);
 }
 
 int infer_dft(struct dstate *ds, unsigned char *inp) {
     struct dstate *ds_next;
     struct slist *sl, *sl_head;
     struct str *out = str_create();
+    struct str *prefix = str_create();
+
 
     for(unsigned char *c=inp; *c != '\0'; c++) {
-	if (ds->next[*c] != NULL) {				/
+	if (ds->next[*c] != NULL) {
+	    //printf("hit cache: %c\n", *c);
 	    str_append_str(out, ds->out[*c]);
 	    ds_next = ds->next[*c];
 	}
@@ -930,14 +1030,21 @@ int infer_dft(struct dstate *ds, unsigned char *inp) {
 		sl = nft_step(li->state->nexta, str_copy(li->suffix), *c, sl);
 	    }
 	    if (sl_head == sl) {				/* got empty list; mark as explored and exit */
-	    	//printf("found nothing\n");
 	    	ds->out[*c] = (struct str*)1;			/* fixme: can we create a better indicator? */
 	    	return 0;
 	    }
 
-	    struct str *prefix = truncate_lcp(sl_head->next);
-	    //str_print(prefix);
-	    //printf("\n");
+	    /*
+	    for(struct slist *li=sl_head; li; li=li->next) {
+	    	printf("%p\n", li->state);
+	    }*/
+
+	    remove_duplicates(sl_head->next);
+	    prefix = truncate_lcp(sl_head->next, prefix);
+
+	    printf("prefix: ");
+	    str_print(prefix);
+	    printf("\n");
 
 	    if (0) { //(ds_next = btree_lookup(dcache, sl_head->next)) != NULL) {
 	    	ds->next[*c] = ds_next;
@@ -949,6 +1056,8 @@ int infer_dft(struct dstate *ds, unsigned char *inp) {
 	    }
 	    str_append_str(out, ds->out[*c]);
 	    ds = ds_next;
+
+	    str_free(prefix);
 	}
     }
 
@@ -971,11 +1080,15 @@ int infer_dft(struct dstate *ds, unsigned char *inp) {
 
     if (ds->final == 1) {
     	/* output the result */
-    	printf("out: ");
+    	//printf("out1: ");
 	str_print(out);
+	//printf("\n");
+    	//printf("out2: ");
 	str_print(ds->final_out);
 	printf("\n");
     }
+
+    str_free(out);
 
     return 0;
 }
