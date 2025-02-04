@@ -9,11 +9,13 @@ Regular expressions is a great tool for searching patterns in text. But I always
 
 . like in (sed editor)[https://www.gnu.org/software/sed/manual/sed.html]. Here I propose an extension to the regular expression language for pattern matching and text modification. I call it transductive regular expressions or simply `trre`.
 
-It is similar to the normal regex language with addtional of symbol `:`. The simplest form of `trre` is `a:b` where `a`, `b` are characters. It will change symbol 'a' to symbol 'b'. I call this pair a `transductive pair` or simply `transduction`.
+It is similar to the normal regex language with addtional of symbol `:`. The simplest form of `trre` is `a:b` where `a`, `b` are characters. It will change symbol `a` to symbol `b`. I call this pair a `transductive pair` or simply `transduction`.
 
 To demonstrate the concept there is a command line tool `trre`. It feels similar to the `grep -E` command.
 
-## Examples: basics
+## Examples
+
+### Basics
 
 To change `cat` to `dog` we can write the following transductive regular expression:
 
@@ -33,7 +35,7 @@ Next, we can use it like `sed` to scan through a string and replace all the matc
 
 ```bash
 $ echo 'Mary had a little lamb.' | trre '(lamb):(cat)'
-Mary had a little cat
+Mary had a little cat.
 ```
 
 **Deletion:**
@@ -54,8 +56,7 @@ xor
 
 We could think of the construction `(x:)` as of changing empty string into `x`.
 
-
-## Examples: regex over transductions
+### Regex over transductions
 
 As for regular expression we could use **alternations** using `|` symbol:
 
@@ -64,33 +65,79 @@ $ echo 'cat dog' | trre 'c:bat|d:hog'
 bat hog
 ```
 
-Star over `trre`:Ok. Now let's add regular expression over the transductions:
+or use the **star** over `trre`.
 
 ```bash
-$ trre '(cat:dog)*' 'catcatcat'
+$ trre '((cat):(dog))*' 'catcatcat'
 dogdogdog
 
+We could use the **star** in the parser part:
+
 ```bash
-$ trre '(cat)+:(dog)' 'catcatcat'
+$ trre '(cat)*:(dog)' 'catcatcat'
 dog
 ```
+
+## Range transformations
+
+```
+echo "regular expressions" | trre  "[a:A-z:Z]"
+REGULAR EXPRESSIONS
+```
+
+We could use it to create a toy cipher, e.g. Caesar cipher where we encrypt text by a cyclic shift of the alphabet:
+```
+echo "caesar cipher" | trre "[a:b-y:zz:a]"
+dbftbs djqifs
+```
+
+and decrypt back:
+
+```
+echo "dbftbs djqifs" | trre "[a:zb:a-y:x]"
+caesar cipher
+```
+
+## Generators
+
+Transductive expression can be `non-functional`. It means for any input string we could have multiple output strings. Using the default `scan` mode we search for the first possible string to match a transductive expression.
+
+We can even use pure generator without any imput (or more formally, an empty string as an input).
+
+```
+echo "" | trre -g "(0|1){3}"
+000
+001
+010
+011
+100
+101
+110
+111
+```
+
+Or the 
+
+echo "" | ./trre -g ":(0|1){,3}?"
+
+
 
 ## Language specification
 
 Informally, we define a `trre` as a pair 'pattern_to_search':'pattern_to_replace'. The 'pattern_to_search' can be a constant string or regexp. The 'pattern_to_replace' normally is a constant string. But it can be a regex as well. But it is where things may be comlicated. We come back to this later. Moreover, we can do normal regular expression over these pairs.
 
-Formally, we can specify a smiplified grammar of trre "*|:."
+Formally, we can specify a smiplified grammar of trre as
 
 ```
 trre       <- trre* trre|trre trre.trre
 trre       <- regex:regex
-regex      <- a a* a.b a|b a*
 ```
 
-Where `a`,`b` any symbols in the alphabet.
+Where `regex` is a usual regular expression.
 
 ## Why it works
 
+![automata](docs/automata.png)
 
 Under the hood we construct the special automaton that is equivalent to a given transductive expression. The idea behind `trre` is very similar to regular expressions. But there are some different key elements:
 
@@ -111,9 +158,9 @@ The sketch of a proof you can find in this document: [theory.pdf](theory.pdf).
 
 There are tons of decisions to make:
 
-1. Syntax: transductions. I have chosen ':' symbol to make it look more like usual regular expressions. In some cases it is confusing. E.g. expression 'a:b:c' has no intuitive meaning in the current formulation. There can be an alternative formulation using two separate symbols, e.g. '>' and '<' to express the `consuming` and `producing` symbols. Though it would look less regex and more `diff`.
+1. **Associativity of ':' symbol**. I have chosen ':' symbol to make it look more like usual regular expressions. In some cases it is confusing. E.g. expression 'a:b:c' has no intuitive meaning in the current formulation. There can be an alternative formulation using two separate symbols, e.g. '>' and '<' to express the `consuming` and `producing` symbols. Though it would look less regex and more `diff`.
 
-2. Syntax: ':' symbol precendence. Should it be
+2. ':' symbol precendence. Should it be
 
 3. Syntax: implicit epsilon.
 
@@ -123,6 +170,7 @@ There are tons of decisions to make:
 * Complete the ERE feature set:
     - negation `^` within square brackets
     - character classes
+* '$^' symbols for the SCAN mode
 * Full unicode support
 * Efficient range processing
-* Deterministic automaton for the generator mode
+* Deterministic automaton for the SCAN mode
