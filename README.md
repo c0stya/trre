@@ -1,13 +1,13 @@
 # TRRE: transductive regular expressions
 
-#### TLDR: an extension of the regular expressions for text editing and a `grep`-like command line tool
-#### It is a prototype. Do not use it in production.
+#### TLDR: an extension of the regular expressions for text editing and a `grep`-like command line tool.
+#### It is a prototype. Do not use in production.
 
 ## Intro
 
-Regular expressions is a great tool for searching patterns in text. But I always found it unnatural for text editing. The *group* logic works as a post-processor and can be complicated.
+![automata](docs/automata.png)
 
-. like in (sed editor)[https://www.gnu.org/software/sed/manual/sed.html]. Here I propose an extension to the regular expression language for pattern matching and text modification. I call it transductive regular expressions or simply `trre`.
+Regular expressions is a great tool for searching patterns in text. But I always found it unnatural for text editing. The *group* logic works as a post-processor and can be complicated. Here I propose an extension to the regular expression language for pattern matching and text modification. I call it transductive regular expressions or simply `trre`.
 
 It is similar to the normal regex language with addtional of symbol `:`. The simplest form of `trre` is `a:b` where `a`, `b` are characters. It will change symbol `a` to symbol `b`. I call this pair a `transductive pair` or simply `transduction`.
 
@@ -45,7 +45,7 @@ $ echo 'xor' | '(x:)or' 'xor'
 cat
 ```
 
-The construction of `(x:)` could be interpreted as of translation of `x` to an empty string.
+The expression `(x:)` could be interpreted as of translation of `x` to an empty string.
 
 **Insertion:**
 
@@ -54,9 +54,9 @@ $ echo 'or' | ./trre '(:x)or'
 xor
 ```
 
-We could think of the construction `(x:)` as of changing empty string into `x`.
+We could think of the expression `(:x)` as of translation of an empty string into `x`.
 
-### Regex over transductions
+## Regex over transductions
 
 As for regular expression we could use **alternations** using `|` symbol:
 
@@ -70,6 +70,7 @@ or use the **star** over `trre`.
 ```bash
 $ trre '((cat):(dog))*' 'catcatcat'
 dogdogdog
+```
 
 We could use the **star** in the parser part:
 
@@ -78,7 +79,7 @@ $ trre '(cat)*:(dog)' 'catcatcat'
 dog
 ```
 
-## Range transformations
+### Range transformations
 
 ```
 echo "regular expressions" | trre  "[a:A-z:Z]"
@@ -98,7 +99,7 @@ echo "dbftbs djqifs" | trre "[a:zb:a-y:x]"
 caesar cipher
 ```
 
-## Generators
+### Generators
 
 Transductive expression can be `non-functional`. It means for any input string we could have multiple output strings. Using the default `scan` mode we search for the first possible string to match a transductive expression.
 
@@ -116,28 +117,41 @@ echo "" | trre -g "(0|1){3}"
 111
 ```
 
-Or the 
+We can generate all the subsets as well:
 
+```
 echo "" | ./trre -g ":(0|1){,3}?"
 
-
+0
+00
+000
+001
+01
+010
+011
+1
+10
+100
+101
+11
+110
+111
+```
 
 ## Language specification
 
-Informally, we define a `trre` as a pair 'pattern_to_search':'pattern_to_replace'. The 'pattern_to_search' can be a constant string or regexp. The 'pattern_to_replace' normally is a constant string. But it can be a regex as well. But it is where things may be comlicated. We come back to this later. Moreover, we can do normal regular expression over these pairs.
+Informally, we define a `trre` as a pair `pattern-to-search`:`pattern-to-generate`. The `pattern-to-search` can be a string or regexp. The `pattern-to-replace` normally is a string. But it can be a `regex` as well. It is where things may be comlicated. We come back to this later. Moreover, we can do normal regular expression over these pairs.
 
-Formally, we can specify a smiplified grammar of trre as
+Formally, we can specify a smiplified grammar of `trre` as following:
 
 ```
-trre       <- trre* trre|trre trre.trre
-trre       <- regex:regex
+TRRE    <- trre* trre|trre trre.trre
+TRRE    <- REGEX:REGEX
 ```
 
-Where `regex` is a usual regular expression.
+Where `REGEX` is a usual regular expression.
 
 ## Why it works
-
-![automata](docs/automata.png)
 
 Under the hood we construct the special automaton that is equivalent to a given transductive expression. The idea behind `trre` is very similar to regular expressions. But there are some different key elements:
 
@@ -151,8 +165,7 @@ To justify the laguage of trunsductive regular expression we need:
 2. Set up the correspondance between underlying automata
 3. Find efficient inference algorithm to process an input string
 
-The sketch of a proof you can find in this document: [theory.pdf](theory.pdf). 
-
+The sketch of a proof you can find in this document: [theory.pdf](theory.pdf).
 
 ## Design choices and open questions
 
