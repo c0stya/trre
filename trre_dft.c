@@ -315,7 +315,6 @@ void plot_ast(struct node *n) {
 }
 
 
-
 enum nstate_type {
     PROD,
     CONS,
@@ -333,6 +332,7 @@ struct nstate {
     char mode;
     struct nstate *nexta;
     struct nstate *nextb;
+    uint8_t visited;
 };
 
 
@@ -349,9 +349,10 @@ struct nstate* create_nstate(enum nstate_type type, struct nstate *nexta, struct
     state->nexta = nexta;
     state->nextb = nextb;
     state->val = 0;
+    state->visited = 0;
+
     return state;
 }
-
 
 
 struct nchunk {
@@ -387,7 +388,7 @@ struct nchunk nft(struct node *n, char mode) {
 	case '|':
 	    l = nft(n->l, mode);
 	    r = nft(n->r, mode);
-	    split = create_nstate(SPLIT, l.head, r.head);
+	    split = create_nstate(SPLITNG, l.head, r.head);
 	    join = create_nstate(JOIN, NULL, NULL);
 	    l.tail->nexta = join;
 	    r.tail->nexta = join;
@@ -666,6 +667,7 @@ int stack_lookup(struct nstate **b, struct nstate **e, struct nstate *v) {
 }
 
 
+
 void plot_nft(struct nstate *start) {
     struct nstate *stack[1024];
     struct nstate *visited[1024];
@@ -794,9 +796,7 @@ void str_free(struct str* s) {
     	si = next;
     }
     free(s);
-    s = NULL;
 }
-
 
 void str_print(struct str *s) {
     assert(s);
@@ -804,89 +804,115 @@ void str_print(struct str *s) {
     	fputc(si->c, stdout);
 }
 
+void str_to_char(struct str *s, char *ch) {
+    assert(s);
+    int i = 0;
+    for(struct str_item *si=s->head; si != NULL; si=si->next)
+    	ch[i++] = si->c;
+    ch[i] = '\0';
+}
+
+
+
 struct slist {
-    struct nstate *state;
-    struct str *suffix;
-    struct slist *next;
+    struct slitem *head;
+    struct slitem *tail;
+    size_t n;
 };
 
-struct slist * slist_create(struct nstate *state, struct str *suffix) {
+struct slitem {
+    struct nstate *state;
+    struct str *suffix;
+    struct slitem *next;
+};
+
+struct slist * slist_create() {
     struct slist *sl;
     sl = malloc(sizeof(struct slist));
-    sl->state = state;
-    sl->suffix = suffix; //str_create();
-    sl->next = NULL;
+    sl->head = sl->tail = NULL;
+    sl->n = 0;
+
     return sl;
 }
 
-struct slist *slist_append(struct slist *sl, struct nstate *state, struct str *suffix) {
-    struct slist *sl_next = slist_create(state, suffix);
-    sl->next = sl_next;
+struct slist * slist_append(struct slist *sl, struct nstate *state, struct str *suffix) {
+    struct slitem *li;
+    li = malloc(sizeof(struct slitem));
+    li->state = state;
+    li->suffix = suffix;
+    li->next = NULL;
 
-    return sl_next;
+    if (sl->tail) {
+    	sl->tail->next = li;
+    	sl->tail = li;
+    } else {
+    	sl->tail = sl->head = li;
+    }
+    sl->n += 1;
+    return sl;
 }
 
 
+void slist_free(struct slist* sl) {
+    struct slitem *li, *next;
+    if (!sl) return;
 
-
-struct slist * nft_step(struct nstate *s, struct str *o, unsigned char c, struct slist *sl) {
-    /* Given the nstate and the corresponding suffix traverse
-     * the nft automaton to reach the CONS states. Keep track
-     * of all the characters produced by PROD states.
-     *
-     * Returns a list of nstates each with corresponding prefix
-     *
-     */
-
-    assert(s);
-    // todo: change to the number of states
-    struct nstate *state_stack[1024];
-    struct nstate **sp = state_stack;
-    struct str *str_stack[1024];
-    struct str **cp = str_stack;
-
-    push(sp, s);
-    push(cp, o);
-
-
-    while (sp != state_stack) { 	// while not empty
-        s = pop(sp);
-        o = pop(cp);
-
-        if (!s) continue;
-
-	switch(s->type) {
-	    case SPLIT:
-		push(cp, o);
-		push(sp, s->nextb);
-		push(cp, str_copy(o));
-		push(sp, s->nexta);
-		break;
-	    case SPLITNG:
-		push(cp, o);
-		push(sp, s->nexta);
-		push(cp, str_copy(o));
-		push(sp, s->nextb);
-		break;
-	    case JOIN:
-		push(cp, o);
-		push(sp, s->nexta);
-		break;
-	    case PROD:
-		push(cp, str_append(o, s->val));
-		push(sp, s->nexta);
-		break;
-	    case CONS:	// found CONS state marked with 'c'
-		if (c == s->val) {
-		    sl = slist_append(sl, s, o);
-		}
-		break;
-	    case FINAL:
-	    	if(c == '\0')	/* final states closure */
-		    sl = slist_append(sl, s, o);
-	    	break;
-	}
+    for(li = sl->head; li != NULL;) {
+    	next = li->next;
+    	str_free(li->suffix);
+    	free(li);
+    	li = next;
     }
+    free(sl);
+}
+
+
+void nft_step_(struct nstate *s, struct str *o, unsigned char c, struct slist *sl) {
+    if (!s) return;
+
+    switch(s->type) {
+	case SPLIT:
+	    nft_step_(s->nextb, o, c, sl);
+	    nft_step_(s->nexta, str_copy(o), c, sl);
+	    break;
+	case SPLITNG:
+	    nft_step_(s->nexta, o, c, sl);
+	    nft_step_(s->nextb, str_copy(o), c, sl);
+	    break;
+	case JOIN:
+	    nft_step_(s->nexta, o, c, sl);
+	    break;
+	case PROD:
+	    nft_step_(s->nexta, str_append(o, s->val), c, sl);
+	    break;
+	case CONS:	// found CONS state marked with 'c'
+	    if (c == s->val && s->visited == 0) {
+	    	s->visited = 1;
+		slist_append(sl, s, o);
+	    }
+	    break;
+	case FINAL:
+	    if(c == '\0' && s->visited == 0) {	/* final states closure */
+		slist_append(sl, s, o);
+	    	s->visited = 1;
+	    }
+	    return;
+    }
+    return;
+}
+
+
+struct slist * nft_step(struct slist *states, unsigned char c) {
+    struct slist *sl = slist_create();
+    struct slitem *li;
+
+    for(li=states->head; li; li=li->next)
+	nft_step_(li->state->nexta, str_copy(li->suffix), c, sl);
+
+    /* reset the visited flag; yes it is linear
+     * but the list have to be short */
+    for(li=sl->head; li; li=li->next)
+    	li->state->visited = 0;
 
     return sl;
 }
@@ -910,15 +936,60 @@ struct dstate * dstate_create(struct slist *states) {
     return ds;
 }
 
-struct str * truncate_lcp(struct slist * sl, struct str *prefix) {
+int dstack_lookup(struct dstate **b, struct dstate **e, struct dstate *v) {
+    while(b != e)
+	if (v == *(--e)) return 1;
+    return 0;
+}
+
+
+void plot_dft(struct dstate *dstart) {
+    struct dstate *stack[1024];
+    struct dstate *visited[1024];
+
+    struct dstate **sp = stack;
+    struct dstate **vp = visited;
+    struct dstate *s = dstart, *s_next = NULL;
+    char out[32], label[32];
+
+    printf("digraph G {\n\tsplines=true; rankdir=LR;\n");
+
+    push(sp, s);
+    while (sp != stack) {
+        s = pop(sp);
+        push(vp, s);
+
+        if (s->final == 1) {
+            str_to_char(s->final_out, out);
+	    printf("\t\"%p\" [peripheries=2, label=\"%s\"];\n", (void*)s, out);
+	}
+        else
+            printf("\t\"%p\" [label=\"\"];\n", (void*)s);
+
+	for(int c=0; c < 256; c++) {
+	    if ((s_next = s->next[c]) != NULL) {
+	    	str_to_char(s->out[c], label);
+		printf("\t\"%p\" -> \"%p\" [label=\"%c:%s\"];\n", (void*)s, (void*)s_next, c, label);
+		if (!dstack_lookup(visited, vp, s_next))
+		    push(sp, s_next);
+	    }
+        }
+    }
+    printf("}\n");
+}
+
+
+
+struct str * truncate_lcp(struct slist *sl, struct str *prefix) {
+    struct slitem *li;
     char ch;
 
     for(;;) {
-    	if(!sl->suffix->head) 			/* end of lcp */
+    	if(!sl->head->suffix->head) 			/* end of lcp */
     	    return prefix;
 
-    	ch = sl->suffix->head->c;
-	for(struct slist *li=sl; li; li=li->next) {
+    	ch = sl->head->suffix->head->c;			/* omg */
+	for(li=sl->head; li; li=li->next) {
 	    if (!li->suffix || !li->suffix->head || li->suffix->head->c != ch)
 		return prefix;
 	}
@@ -927,54 +998,100 @@ struct str * truncate_lcp(struct slist * sl, struct str *prefix) {
 	 * - add the char to the prefix,
 	 * - truncate the suffixes */
 	str_append(prefix, ch);
-	for(struct slist *li=sl; li; li=li->next)
+	for(li=sl->head; li; li=li->next)
 	    str_popleft(li->suffix);
     }
     return prefix;
 }
 
+/* lexicographic comparison */
+int str_cmp(struct str *a, struct str *b) {
+    struct str_item *ai, *bi;
+    for(ai=a->head, bi=b->head; ai && bi; ai=ai->next, bi=bi->next)
+    	if (ai->c < bi->c)
+    	    return -1;
+	else if (ai->c > bi->c)
+    	    return 1;
+    if (ai)
+	return 1;
+    if (bi)
+	return -1;
+
+    return 0;
+}
+
+int list_cmp(struct slist *a, struct slist *b) {
+    struct slitem *ai, *bi;
+    int sign;
+
+    if(a->n < b->n)
+    	return -1;
+    if(a->n > b->n)
+    	return 1;
+
+    for(ai=a->head, bi=b->head; ai && bi; ai=ai->next, bi=bi->next)
+	if(ai->state < bi->state)
+	    return -1;
+	else if(ai->state > bi->state)
+	    return 1;
+	else {
+	    sign = str_cmp(ai->suffix, bi->suffix);
+	    if (sign != 0)
+		return sign;
+	}
+
+    return 0;
+}
+
+
 // Define the structure for the tree node
 struct btnode {
-    struct nstate *s;
-    struct btnode* l;
-    struct btnode* r;
+    struct dstate *ds;
+    struct btnode *l;
+    struct btnode *r;
 };
 
 // Function to create a new node with given data
-struct btnode* bt_create(struct nstate * s) {
-    struct btnode* node = malloc(sizeof(struct btnode));
+struct btnode* bt_create(struct dstate *ds) {
+    struct btnode* node;
+    node = malloc(sizeof(struct btnode));
     if (node == NULL) {
         printf("error: binary tree node allocation failed.\n");
 	exit(EXIT_FAILURE);
     }
-    node->s = s;
+    node->ds = ds;
     node->l = NULL;
     node->r = NULL;
     return node;
 }
 
 // Lookup function to search for a value in the binary tree
-struct btnode* bt_lookup(struct btnode* n, struct nstate *s) {
-    while (n != NULL)
-        if (s < n->s)
+struct dstate* bt_lookup(struct btnode *n, struct slist *sl) {
+    int sign = 0;
+
+    while (n != NULL) {
+    	sign = list_cmp(sl, n->ds->states);
+        if (sign < 0)		/* less */
             n = n->l;
-        else if (s > n->s)
+        else if (sign > 0)	/* more */
             n = n->r;
         else
-            return n; // Value found
+            return n->ds; 	/* found */
+    }
     return NULL;
 }
 
 // Function to insert nodes to form a binary search tree
-struct btnode* bt_insert(struct btnode* root, struct nstate *s) {
-    if (root == NULL)
-        return bt_create(s);
-    if (s < root->s) {
-        root->l = bt_insert(root->l, s);
-    } else if (s > root->s) {
-        root->r = bt_insert(root->r, s);
-    }
-    return root;
+struct btnode* bt_insert(struct btnode* n, struct dstate *ds) {
+    int sign;
+    if (n == NULL)
+        return bt_create(ds);
+    sign = list_cmp(ds->states, n->ds->states);
+    if (sign < 0)
+        n->l = bt_insert(n->l, ds);
+    else if (sign > 0)
+	n->r = bt_insert(n->r, ds);
+    return n;
 }
 
 void bt_free(struct btnode* root) {
@@ -984,113 +1101,87 @@ void bt_free(struct btnode* root) {
     free(root);
 }
 
-void remove_duplicates(struct slist *sl) {
-    struct btnode *bt = NULL;
-    assert(sl);
 
-    for(struct slist *li=sl, *li_prev=NULL; li; li=li->next) {
-    	if (!bt) {
-	    bt = bt_insert(bt, li->state);
-	    li_prev = li;
-	}
-	else {
-	    if(bt_lookup(bt, li->state)) {	/* remove the element from the list */
-	    	assert(li_prev);		/* we always have the element */
-		li_prev->next = li->next;
-	    	free(li);
-	    } else {
-		bt_insert(bt, li->state);
-		li_prev = li;
-	    }
-	}
-    }
-    bt_free(bt);
-}
+int infer_dft(struct dstate *dstart, unsigned char *inp, struct btnode *dcache, enum infer_mode mode) {
+    struct dstate *ds_next, *ds=dstart;
+    struct str *prefix, *out = str_create();
+    struct slist *sl;
 
-int infer_dft(struct dstate *ds, unsigned char *inp) {
-    struct dstate *ds_next;
-    struct slist *sl, *sl_head;
-    struct str *out = str_create();
-    struct str *prefix = str_create();
+    unsigned char *c;
+    int i = 0;
 
+    for(c=inp; *c != '\0'; c++, i++) {
+	//printf("char: %c, ds: %p\n", *c, (void*)ds);
 
-    for(unsigned char *c=inp; *c != '\0'; c++) {
 	if (ds->next[*c] != NULL) {
-	    //printf("hit cache: %c\n", *c);
 	    str_append_str(out, ds->out[*c]);
-	    ds_next = ds->next[*c];
+	    ds = ds->next[*c];
+	    //printf("hit: %p\n", (void*)ds);
 	}
-	else if (ds->out[*c] == NULL) {				/* not explored */
-	    sl_head = slist_create(NULL, NULL);			/* dummy node */
-	    sl = sl_head;
+	else if (ds->out[*c] != NULL) {				/* already explored but found nothing */
+	    break;
+	}
+	else {							/* not explored, explore */
+	    //printf("miss\n");
+	    sl = nft_step(ds->states, *c);
 
 	    /* expand each state and accumulate CONS states labeled with c */
-	    for(struct slist *li=ds->states; li; li=li->next) {
-		/* return a pointer to the latest item */
-		sl = nft_step(li->state->nexta, str_copy(li->suffix), *c, sl);
-	    }
-	    if (sl_head == sl) {				/* got empty list; mark as explored and exit */
+	    if (!sl->head) {					/* got empty list; mark as explored and exit */
 	    	ds->out[*c] = (struct str*)1;			/* fixme: can we create a better indicator? */
-	    	return 0;
+	    	slist_free(sl);
+	    	break;
 	    }
 
-	    /*
-	    for(struct slist *li=sl_head; li; li=li->next) {
-	    	printf("%p\n", li->state);
-	    }*/
+	    prefix = str_create();
+	    truncate_lcp(sl, prefix);
 
-	    remove_duplicates(sl_head->next);
-	    prefix = truncate_lcp(sl_head->next, prefix);
-
-	    printf("prefix: ");
-	    str_print(prefix);
-	    printf("\n");
-
-	    if (0) { //(ds_next = btree_lookup(dcache, sl_head->next)) != NULL) {
+	    if ((ds_next = bt_lookup(dcache, sl)) != NULL) {
 	    	ds->next[*c] = ds_next;
-	    	ds->out[*c] = prefix; //prefix;
+	    	ds->out[*c] = prefix;
+	    	slist_free(sl);					/* no need for the list */
 	    } else {
-	    	ds_next = dstate_create(sl_head->next);
+	    	ds_next = dstate_create(sl);
 	    	ds->next[*c] = ds_next;
-	    	ds->out[*c] = prefix; //prefix;
+	    	ds->out[*c] = prefix;
+	    	bt_insert(dcache, ds_next);
 	    }
+
 	    str_append_str(out, ds->out[*c]);
 	    ds = ds_next;
+	    //str_free(prefix);
 
-	    str_free(prefix);
+	    // refactor this: do not make closure several times
+	    if (ds->final < 0) {					/* unexplored */
+		sl = nft_step(ds->states, '\0');
+
+		if (sl->head) {						/* got final states; take the first one */
+		    ds->final = 1;
+		    ds->final_out = str_copy(sl->head->suffix);
+		    // we do not need the sl list anymore!
+		} else {
+		    ds->final = 0;
+		}
+	    }
+	}
+	if (mode == SCAN && ds->final == 1) {
+	    //printf("here I am\n");
+	    str_print(out);
+	    str_print(ds->final_out);
+	    break;
 	}
     }
 
-    /* Lazily check for the final state and the final state output. */
-    if (ds->final < 0) {					/* unexplored */
-	sl_head = slist_create(NULL, NULL);			/* dummy node */
-	sl = sl_head;
-
-	for(struct slist *li=ds->states; li; li=li->next) {
-	    /* return a pointer to the latest item */
-	    sl = nft_step(li->state->nexta, str_copy(li->suffix), '\0', sl);
-	}
-	if (sl_head != sl) {				/* got final states; take the first one */
-	    ds->final = 1;
-	    ds->final_out = sl_head->next->suffix;
-	} else {
-	    ds->final = 0;
-	}
-    }
-
-    if (ds->final == 1) {
-    	/* output the result */
-    	//printf("out1: ");
+    if (ds->final == 1 && *c == '\0' && mode == MATCH) {
+	//printf("\nout: ");
 	str_print(out);
-	//printf("\n");
-    	//printf("out2: ");
+	//printf("\noutf: ");
 	str_print(ds->final_out);
-	printf("\n");
     }
 
     str_free(out);
+    //str_free(prefix);
 
-    return 0;
+    return i;
 }
 
 
@@ -1104,6 +1195,8 @@ int main(int argc, char **argv)
     struct node *root;
     struct nstate *start;
     struct sstack *stack = screate(32);
+    struct dstate *dstart;
+    struct btnode *dcache;
     enum infer_mode mode = SCAN;
 
 
@@ -1144,8 +1237,11 @@ int main(int argc, char **argv)
     // todo: can we do better?
     output = malloc(output_capacity*sizeof(char));
 
-    struct slist *slist_init = slist_create(start, str_create());
-    struct dstate *dstart = dstate_create(slist_init);
+    struct slist *sl_init = slist_create();
+    slist_append(sl_init, start, str_create());
+
+    dstart = dstate_create(sl_init);
+    dcache = bt_create(dstart);
 
     if (optind == argc - 2) {		// filename provided
 	input_fn = argv[optind + 1];
@@ -1165,14 +1261,14 @@ int main(int argc, char **argv)
 	    ch = line;
 
 	    while (*ch != '\0') {
-		ioffset = infer_dft(dstart, (unsigned char*)ch);
+		ioffset = infer_dft(dstart, (unsigned char*)ch, dcache, mode);
+		//printf("offset: %d\n", ioffset);
 		if (ioffset > 0)
 		    ch += ioffset;
 		else
 		    fputc(*ch++, stdout);
 	    }
 	    fputc('\n', stdout);
-
 	    /*
 	    infer_backtrack(start, line, stack, mode);
 	    */
@@ -1181,9 +1277,12 @@ int main(int argc, char **argv)
 	while ((read = getline(&line, &input_len, fp)) != -1) {
 	    stack->n_items = 0; 	// reset the stack; do not shrink the capacity
 	    line[read-1] = '\0';
-	    ioffset = infer_dft(dstart, (unsigned char*)line);
-	    //fputc('\n', stdout);
+	    ioffset = infer_dft(dstart, (unsigned char*)line, dcache, mode);
+	    fputc('\n', stdout);
 	}
+    }
+    if (debug) {
+    	plot_dft(dstart);
     }
 
     fclose(fp);
