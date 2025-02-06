@@ -30,7 +30,8 @@ struct node {
 #define pop(stack) 		*--stack
 #define top(stack) 		*(stack-1)
 
-#define STACK_MAX_CAPACITY	1000000
+#define STACK_INIT_CAPACITY	32
+#define STACK_MAX_CAPACITY	100000
 
 static unsigned char operators[1024];
 static struct node *operands[1024];
@@ -63,8 +64,9 @@ struct node * create_nodev(unsigned char type, unsigned char val) {
 }
 
 enum infer_mode {
-    SCAN,
-    MATCH,
+    MODE_SCAN,
+    MODE_MATCH,
+    MODE_GEN,
 };
 
 
@@ -387,7 +389,7 @@ struct nchunk nft(struct node *n, char mode) {
 	case '|':
 	    l = nft(n->l, mode);
 	    r = nft(n->r, mode);
-	    split = create_nstate(SPLIT, l.head, r.head);
+	    split = create_nstate(SPLITNG, l.head, r.head);
 	    join = create_nstate(JOIN, NULL, NULL);
 	    l.tail->nexta = join;
 	    r.tail->nexta = join;
@@ -586,9 +588,10 @@ char* resize_output(char *output, size_t *capacity) {
 }
 
 // Main DFS traversal function
-ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack, enum infer_mode mode) {
+ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack, enum infer_mode mode, int all) {
     size_t i = 0, o = 0;
     struct nstate *s = start;
+    stack->n_items = 0;		/* reset stack; do not shrink */
 
     while (stack->n_items || s) {
         if (!s) {
@@ -627,18 +630,21 @@ ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack,
                 s = s->nexta;
                 break;
             case FINAL:
-            	if (mode == MATCH) {
+		if (mode == MODE_MATCH) {
 		    if (input[i] == '\0') {
 			output[o] = '\0'; // Null-terminate the output string
 			fputs(output, stdout);
-			fputs("\n", stdout);
+			fputc('\n', stdout);
+			if (!all)
+			    return i;
 		    }
-		    s = NULL;
 		} else {
 		    output[o] = '\0'; // Null-terminate the output string
 		    fputs(output, stdout);
-		    return i;
+		    if (!all)
+			return i;
 		}
+		s = NULL;
                 break;
             default:
                 fprintf(stderr, "error: unknown state type\n");
@@ -648,54 +654,6 @@ ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack,
     return -1;
 }
 
-/*
-// Define the structure for the tree node
-struct btnode {
-    int data;
-    struct btnode* l;
-    struct btnode* r;
-};
-
-// Function to create a new node with given data
-struct btnode* create_btnode(int data) {
-    struct btnode* node = malloc(sizeof(struct btnode));
-    if (node == NULL) {
-        printf("error: binary tree node allocation failed.\n");
-	exit(EXIT_FAILURE);
-    }
-    node->data = data;
-    node->left = NULL;
-    node->right = NULL;
-    return newNode;
-}
-
-// Lookup function to search for a value in the binary tree
-struct btnode* lookup(struct btnode* node, int value) {
-    while (node != NULL) {
-        if (value < node->data) {
-            node = node->left;
-        } else if (value > node->data) {
-            node = node->right;
-        } else {
-            return node; // Value found
-        }
-    }
-    return NULL; // Value not found
-}
-
-// Function to insert nodes to form a binary search tree
-Node* insert(Node* root, int value) {
-    if (root == NULL) {
-        return createNode(value);
-    }
-    if (value < root->data) {
-        root->left = insert(root->left, value);
-    } else if (value > root->data) {
-        root->right = insert(root->right, value);
-    }
-    return root;
-}
-*/
 
 int stack_lookup(struct nstate **b, struct nstate **e, struct nstate *v) {
     while(b != e)
@@ -759,19 +717,22 @@ int main(int argc, char **argv)
     char *line = NULL, *input_fn, *ch;
     struct node *root;
     struct nstate *start;
-    struct sstack *stack = screate(32);
-    enum infer_mode mode = SCAN;
-
+    struct sstack *stack = screate(STACK_INIT_CAPACITY);
+    enum infer_mode mode = MODE_SCAN;
+    int all = 0;
 
     int opt, debug=0;
 
-    while ((opt = getopt(argc, argv, "dm")) != -1) {
+    while ((opt = getopt(argc, argv, "dma")) != -1) {
 	switch (opt) {
 	    case 'd':
 		debug = 1;
 		break;
 	    case 'm':
-		mode = MATCH;
+		mode = MODE_MATCH;
+		break;
+	    case 'a':
+		all = 1;
 		break;
 	    default: /* '?' */
 		fprintf(stderr, "Usage: %s [-d] [-m] expr [file]\n",
@@ -788,13 +749,13 @@ int main(int argc, char **argv)
     expr = argv[optind];
     root = parse(expr);
 
+    start = create_nft(root);
+
     if (debug) {
-	plot_ast(root);
-	//plot_nft(start);
+	//plot_ast(root);
+	plot_nft(start);
     }
 
-    start = create_nft(root);
-    //printf("%c\n", start->type);
 
     output = malloc(output_capacity*sizeof(char));
 
@@ -809,30 +770,26 @@ int main(int argc, char **argv)
     } else
     	fp = stdin;
 
-    if (mode == SCAN) {
+    if (mode == MODE_SCAN) {
 	while ((read = getline(&line, &input_len, fp)) != -1) {
-	    stack->n_items = 0; 	// reset the stack; do not shrink the capacity
 	    line[read-1] = '\0';
 	    ch = line;
 
 	    while (*ch != '\0') {
-		ioffset = infer_backtrack(start, ch, stack, mode);
+		ioffset = infer_backtrack(start, ch, stack, mode, all);
 		if (ioffset > 0)
 		    ch += ioffset;
 		else
 		    fputc(*ch++, stdout);
 	    }
+	    // even if we have empty string we need to run it
+	    infer_backtrack(start, ch, stack, mode, all);
 	    fputc('\n', stdout);
-
-	    /*
-	    infer_backtrack(start, line, stack, mode);
-	    */
 	}
-    } else {	/* MATCH mode and generator */
+    } else {	/* MATCH and GEN modes */
 	while ((read = getline(&line, &input_len, fp)) != -1) {
-	    stack->n_items = 0; 	// reset the stack; do not shrink the capacity
 	    line[read-1] = '\0';
-	    infer_backtrack(start, line, stack, mode);
+	    infer_backtrack(start, line, stack, mode, all);
 	    //fputc('\n', stdout);
 	}
     }
@@ -842,4 +799,3 @@ int main(int argc, char **argv)
         free(line);
     return 0;
 }
-

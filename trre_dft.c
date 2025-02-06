@@ -42,7 +42,7 @@ static char* output;
 static size_t output_capacity=32;
 
 
-struct node * create_node(char type, struct node *l, struct node *r) {
+struct node * create_node(unsigned char type, struct node *l, struct node *r) {
     struct node *node = malloc(sizeof(struct node));
     if (!node) {
 	fprintf(stderr, "error: node memory allocation failed\n");
@@ -209,7 +209,6 @@ struct node * parse(char *expr) {
 		    state = 1;
 		    break;
 		case '.':
-		    //push(opd, create_nodev('a', 0));
 		    push(opd, create_node('-',
 		    		create_nodev('c', 0),
 		    		create_nodev('c', 255)));
@@ -328,8 +327,8 @@ enum nstate_type {
 // nft state
 struct nstate {
     enum nstate_type type;
-    char val;
-    char mode;
+    unsigned char val;
+    unsigned char mode;
     struct nstate *nexta;
     struct nstate *nextb;
     uint8_t visited;
@@ -714,7 +713,7 @@ void plot_nft(struct nstate *start) {
 }
 
 struct str_item {
-    char c;
+    unsigned char c;
     struct str_item *next;
 };
 
@@ -730,7 +729,7 @@ struct str * str_create() {
     return st;
 }
 
-struct str * str_append(struct str *s, char c) {
+struct str * str_append(struct str *s, unsigned char c) {
     struct str_item *si;
     si = malloc(sizeof(struct str_item));
     si->c = c;
@@ -746,7 +745,7 @@ struct str * str_append(struct str *s, char c) {
 }
 
 char str_popleft(struct str *s) {
-    char c;
+    unsigned char c;
     struct str_item *tmp;
 
     if (s->head == NULL) {
@@ -804,7 +803,7 @@ void str_print(struct str *s) {
     	fputc(si->c, stdout);
 }
 
-void str_to_char(struct str *s, char *ch) {
+void str_to_char(struct str *s, unsigned char *ch) {
     assert(s);
     int i = 0;
     for(struct str_item *si=s->head; si != NULL; si=si->next)
@@ -869,6 +868,7 @@ void slist_free(struct slist* sl) {
 
 void nft_step_(struct nstate *s, struct str *o, unsigned char c, struct slist *sl) {
     if (!s) return;
+
 
     switch(s->type) {
 	case SPLIT:
@@ -950,7 +950,7 @@ void plot_dft(struct dstate *dstart) {
     struct dstate **sp = stack;
     struct dstate **vp = visited;
     struct dstate *s = dstart, *s_next = NULL;
-    char out[32], label[32];
+    unsigned char out[32], label[32];
 
     printf("digraph G {\n\tsplines=true; rankdir=LR;\n");
 
@@ -982,7 +982,7 @@ void plot_dft(struct dstate *dstart) {
 
 struct str * truncate_lcp(struct slist *sl, struct str *prefix) {
     struct slitem *li;
-    char ch;
+    unsigned char ch;
 
     for(;;) {
     	if(!sl->head->suffix->head) 			/* end of lcp */
@@ -1108,21 +1108,18 @@ int infer_dft(struct dstate *dstart, unsigned char *inp, struct btnode *dcache, 
     struct slist *sl;
 
     unsigned char *c;
+    //char *c;
     int i = 0;
 
     for(c=inp; *c != '\0'; c++, i++) {
-	//printf("char: %c, ds: %p\n", *c, (void*)ds);
-
 	if (ds->next[*c] != NULL) {
 	    str_append_str(out, ds->out[*c]);
 	    ds = ds->next[*c];
-	    //printf("hit: %p\n", (void*)ds);
 	}
 	else if (ds->out[*c] != NULL) {				/* already explored but found nothing */
 	    break;
 	}
 	else {							/* not explored, explore */
-	    //printf("miss\n");
 	    sl = nft_step(ds->states, *c);
 
 	    /* expand each state and accumulate CONS states labeled with c */
@@ -1163,23 +1160,22 @@ int infer_dft(struct dstate *dstart, unsigned char *inp, struct btnode *dcache, 
 		}
 	    }
 	}
+	/*
 	if (mode == SCAN && ds->final == 1) {
 	    //printf("here I am\n");
 	    str_print(out);
 	    str_print(ds->final_out);
 	    break;
-	}
+	}*/
     }
 
     if (ds->final == 1 && *c == '\0' && mode == MATCH) {
-	//printf("\nout: ");
 	str_print(out);
-	//printf("\noutf: ");
 	str_print(ds->final_out);
+	fputc('\n', stdout);
     }
 
     str_free(out);
-    //str_free(prefix);
 
     return i;
 }
@@ -1191,10 +1187,11 @@ int main(int argc, char **argv)
     char *expr;
     ssize_t read, ioffset;
     size_t input_len;
+    //unsigned char *line = NULL, *input_fn, *ch;
     char *line = NULL, *input_fn, *ch;
     struct node *root;
     struct nstate *start;
-    struct sstack *stack = screate(32);
+    //struct sstack *stack = screate(32);
     struct dstate *dstart;
     struct btnode *dcache;
     enum infer_mode mode = SCAN;
@@ -1256,13 +1253,11 @@ int main(int argc, char **argv)
 
     if (mode == SCAN) {
 	while ((read = getline(&line, &input_len, fp)) != -1) {
-	    stack->n_items = 0; 	// reset the stack; do not shrink the capacity
 	    line[read-1] = '\0';
 	    ch = line;
 
 	    while (*ch != '\0') {
 		ioffset = infer_dft(dstart, (unsigned char*)ch, dcache, mode);
-		//printf("offset: %d\n", ioffset);
 		if (ioffset > 0)
 		    ch += ioffset;
 		else
@@ -1275,10 +1270,8 @@ int main(int argc, char **argv)
 	}
     } else {	/* MATCH mode and generator */
 	while ((read = getline(&line, &input_len, fp)) != -1) {
-	    stack->n_items = 0; 	// reset the stack; do not shrink the capacity
 	    line[read-1] = '\0';
 	    ioffset = infer_dft(dstart, (unsigned char*)line, dcache, mode);
-	    fputc('\n', stdout);
 	}
     }
     if (debug) {

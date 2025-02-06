@@ -65,19 +65,44 @@ $ echo 'cat dog' | trre 'c:bat|d:hog'
 bat hog
 ```
 
-or use the **star** over `trre`.
+or use the **star** over `trre` to infinitely change the corresponding pattern:
+
+```bash
+$ echo 'catcatcat' | trre '((cat):(dog))*'
+dogdogdog
+```
+
+but in the default `scan` mode we could omit the **star**:
 
 ```bash
 $ echo 'catcatcat' | trre '(cat):(dog)'
 dogdogdog
 ```
 
-We could use the **star** in the left part of the transductive pair:
+We could use the **star** in the left part of the transductive pair to infinitely "consume" corresponding pattern:
 
 ```bash
-$ echo 'catcatcat' trre '(cat)*:(dog)'
+$ echo 'catcatcat' | trre '(cat)*:(dog)'
 dog
 ```
+
+#### Danger zone
+
+Do not use '*' or '+' in the right part because it forces the infinite generation loop:
+
+```bash
+$ echo '' | trre ':a*'      # <- do NOT do this
+dog
+```
+
+Use the finite iteration instead:
+
+```bash
+$ echo '' | trre ':(repeat-10-times){10}'
+dog
+```
+
+
 
 ### Range transformations
 
@@ -187,7 +212,7 @@ There are tons of decisions to make:
 
 ## Determinization and performance
 
-![determinization](docs/determinization.png| width=70)
+<img src="docs/determinization.png" width="70%"/>
 
 The important part of the modern regex engines is determinization. This routine converts the non-deterministic automata to the deterministic one. Once converted it has linear time inference on the input string length. It is handy but the convertion is exponential in the worst case. That's why regex engines use on-the-fly determinization where remember the explored deterministic states and put them into a cache.
 

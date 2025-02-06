@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cmd_scan="./trre"
-cmd_match="./trre -m"
+cmd_match="./trre -g"
 
 M() {
     local inp="$1"
@@ -101,7 +101,7 @@ S	""		":a{,3}"		"aaa"
 M	""		":a{,3}"		"aaa\naa\na"
 
 S	""		":a{,3}?"		""
-M	""		":a{,3}?"		"a\naa\naaa"
+M	""		":a{,3}?"		"\na\naa\naaa"
 
 # greed modifiers
 S	"aaa"		"(.:x)*.*"		"xxx"
@@ -116,7 +116,7 @@ S	"+"		"\+"			"+"
 S	"?"		"\?"			"?"
 S	":"		"\:"			":"
 S	".a"		"\.a"			".a"
-S	".a"		"[.]c"			"problem"
+M	".c"		"[.]c"			".c"
 
 # epsilon
 # generators
