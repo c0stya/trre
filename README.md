@@ -187,7 +187,7 @@ There are tons of decisions to make:
 
 ## Determinization and performance
 
-![determinization](docs/determinization.png)
+![determinization](docs/determinization.png| width=70)
 
 The important part of the modern regex engines is determinization. This routine converts the non-deterministic automata to the deterministic one. Once converted it has linear time inference on the input string length. It is handy but the convertion is exponential in the worst case. That's why regex engines use on-the-fly determinization where remember the explored deterministic states and put them into a cache.
 
