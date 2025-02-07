@@ -21,6 +21,7 @@ To change `cat` to `dog` we use the following expression:
 
 ```bash
 $ echo 'cat' | trre 'c:da:ot:g'
+
 dog
 ```
 
@@ -28,6 +29,7 @@ A more readable version:
 
 ```bash
 $ echo 'cat' | trre '(cat):(dog)'
+
 dog
 ```
 
@@ -35,6 +37,7 @@ It can be used like `sed` to replace all matches in a string:
 
 ```bash
 $ echo 'Mary had a little lamb.' | trre '(lamb):(cat)'
+
 Mary had a little cat.
 ```
 
@@ -42,6 +45,7 @@ Mary had a little cat.
 
 ```bash
 $ echo 'xor' | trre '(x:)or'
+
 or
 ```
 
@@ -51,6 +55,7 @@ The expression `(x:)` could be interpreted as of translation of `x` to an empty 
 
 ```bash
 $ echo 'or' | trre '(:x)or'
+
 xor
 ```
 
@@ -62,6 +67,7 @@ As for normal regular expression we could use **alternations** with `|` symbol:
 
 ```bash
 $ echo 'cat dog' | trre 'c:bat|d:hog'
+
 bat hog
 ```
 
@@ -69,6 +75,7 @@ Or use the **star** over `trre` to repeat the transformation:
 
 ```bash
 $ echo 'catcatcat' | trre '((cat):(dog))*'
+
 dogdogdog
 ```
 
@@ -76,6 +83,7 @@ In the default `scan` mode, **star** can be omitted:
 
 ```bash
 $ echo 'catcatcat' | trre '(cat):(dog)'
+
 dogdogdog
 ```
 
@@ -83,6 +91,7 @@ You can also use the star in the left part to "consume" a pattern infinitely:
 
 ```bash
 $ echo 'catcatcat' | trre '(cat)*:(dog)'
+
 dog
 ```
 
@@ -92,14 +101,16 @@ Avoid using `*` or `+` in the right part, as it can cause infinite loops:
 
 ```bash
 $ echo '' | trre ':a*'      # <- do NOT do this
-dog
+
+...
 ```
 
 Instead, use finite iterations:
 
 ```bash
 $ echo '' | trre ':(repeat-10-times){10}'
-dog
+
+repeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-times
 ```
 
 ### Range transformations
@@ -108,6 +119,7 @@ Transform ranges of characters:
 
 ```bash
 $ echo "regular expressions" | trre  "[a:A-z:Z]"
+
 REGULAR EXPRESSIONS
 ```
 
@@ -115,6 +127,7 @@ As more complex example, lets create a toy cipher. Below is the Caesar cipher(1)
 
 ```bash
 $ echo 'caesar cipher' | trre '[a:b-y:zz:a]'
+
 dbftbs djqifs
 ```
 
@@ -122,6 +135,7 @@ And decrypt it back:
 
 ```bash
 $ echo 'dbftbs djqifs' | trre '[a:zb:a-y:x]'
+
 caesar cipher
 ```
 
@@ -132,6 +146,7 @@ caesar cipher
 **Binary sequences:**
 ```bash
 $ echo '' | trre -g '(0|1){3}'
+
 000
 001
 010
@@ -145,6 +160,7 @@ $ echo '' | trre -g '(0|1){3}'
 **Subsets:**
 ```bash
 $ echo '' | trre -g ':(0|1){,3}?'
+
 
 0
 00
@@ -216,9 +232,11 @@ The `? modifier makes `*`, `+`, and `{,}` operators non-greedy:
 
 ```bash
 $ echo '<cat><dog>' | trre '<(.:)*>'
+
 <>
 
 $ echo '<cat><dog>' | trre '<(.:)*?>'
+
 <><>
 ```
 
