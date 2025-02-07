@@ -424,7 +424,7 @@ struct nchunk nft(struct node *n, char mode) {
 		psplit = NULL;
 		for(int c=n->r->val; c >= n->l->val; c--){
 		    l = nft(create_nodev('c', c), mode);
-		    split = create_nstate(SPLIT, l.head, psplit);
+		    split = create_nstate(SPLITNG, l.head, psplit);
 		    l.tail->nexta = join;
 		    psplit = split;
 		}
@@ -441,7 +441,7 @@ struct nchunk nft(struct node *n, char mode) {
 		    	    create_nodev('c', llv+c),
 		    	    create_nodev('c', lrv+c)
 		    	    ), mode);
-		    split = create_nstate(SPLIT, l.head, psplit);
+		    split = create_nstate(SPLITNG, l.head, psplit);
 		    l.tail->nexta = join;
 		    psplit = split;
 		}
@@ -1108,10 +1108,18 @@ int infer_dft(struct dstate *dstart, unsigned char *inp, struct btnode *dcache, 
     struct slist *sl;
 
     unsigned char *c;
-    //char *c;
     int i = 0;
 
     for(c=inp; *c != '\0'; c++, i++) {
+
+	if (mode == SCAN && ds->final == 1) {
+	    str_print(out);
+	    str_print(ds->final_out);
+	    str_free(out);
+	    return i;
+	}
+
+	// todo: double check this logic
 	if (ds->next[*c] != NULL) {
 	    str_append_str(out, ds->out[*c]);
 	    ds = ds->next[*c];
@@ -1160,24 +1168,26 @@ int infer_dft(struct dstate *dstart, unsigned char *inp, struct btnode *dcache, 
 		}
 	    }
 	}
-	/*
-	if (mode == SCAN && ds->final == 1) {
-	    //printf("here I am\n");
-	    str_print(out);
-	    str_print(ds->final_out);
-	    break;
-	}*/
     }
 
-    if (ds->final == 1 && *c == '\0' && mode == MATCH) {
+    /*
+    if (mode == SCAN && ds->final == 1) {
+	//printf("i:%d\n", i);
 	str_print(out);
 	str_print(ds->final_out);
-	fputc('\n', stdout);
+	return i;
+    }*/
+
+
+    //if (mode == MATCH && ds->final == 1 && *c == '\0') {
+    if (ds->final == 1 && *c == '\0') {
+	str_print(out);
+	str_print(ds->final_out);
     }
 
     str_free(out);
 
-    return i;
+    return -1;
 }
 
 
@@ -1199,7 +1209,7 @@ int main(int argc, char **argv)
 
     int opt, debug=0;
 
-    while ((opt = getopt(argc, argv, "dm")) != -1) {
+    while ((opt = getopt(argc, argv, "dma")) != -1) {
 	switch (opt) {
 	    case 'd':
 		debug = 1;
@@ -1207,8 +1217,11 @@ int main(int argc, char **argv)
 	    case 'm':
 		mode = MATCH;
 		break;
+	    case 'a':
+		fprintf(stderr, "Not supported yet\n");
+		exit(EXIT_FAILURE);
 	    default: /* '?' */
-		fprintf(stderr, "Usage: %s [-d] [-m] expr [file]\n",
+		fprintf(stderr, "Usage: %s [-dma] expr [file]\n",
 		       argv[0]);
 		exit(EXIT_FAILURE);
 	}
@@ -1260,18 +1273,17 @@ int main(int argc, char **argv)
 		ioffset = infer_dft(dstart, (unsigned char*)ch, dcache, mode);
 		if (ioffset > 0)
 		    ch += ioffset;
-		else
+		else {
 		    fputc(*ch++, stdout);
+		}
 	    }
 	    fputc('\n', stdout);
-	    /*
-	    infer_backtrack(start, line, stack, mode);
-	    */
 	}
     } else {	/* MATCH mode and generator */
 	while ((read = getline(&line, &input_len, fp)) != -1) {
 	    line[read-1] = '\0';
 	    ioffset = infer_dft(dstart, (unsigned char*)line, dcache, mode);
+	    fputc('\n', stdout);
 	}
     }
     if (debug) {

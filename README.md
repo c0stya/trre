@@ -1,37 +1,37 @@
 # TRRE: transductive regular expressions
 
 #### TLDR: It is an extension of the regular expressions for text editing and a `grep`-like command line tool.
-#### It is a prototype. Do not use in production.
+#### It is a PROTOTYPE. Do not use in production.
 
 ## Intro
 
 ![automata](docs/automata.png)
 
-Regular expressions is a great tool for searching patterns in text. But I always found it unnatural for text editing. The *group* logic works as a post-processor and can be complicated. Here I propose an extension to the regular expression language for pattern matching and text modification. I call it transductive regular expressions or simply `trre`.
+Regular expressions is a great tool for searching patterns in text. But I always found it unnatural for text editing. The *group* logic works as a post-processor and can be complicated. Here I propose an extension to the regular expression language for pattern matching and text modification. I call it **transductive regular expressions** or simply **`trre`**.
 
-It is similar to the normal regex language with addtional of symbol `:`. The simplest form of `trre` is `a:b` where `a`, `b` are characters. It will change symbol `a` to symbol `b`. I call this pair a `transductive pair` or simply `transduction`.
+It  introduces the `:` symbol to define transformations. The simplest form is `a:b`, which replaces a with b. I call this a `transductive pair` or `transduction`.
 
-To demonstrate the concept there is a command line tool `trre`. It feels similar to the `grep -E` command.
+To demonstrate the concept, I have created a command line tool `trre`. It feels similar to the `grep -E` command.
 
 ## Examples
 
 ### Basics
 
-To change `cat` to `dog` we can write the following transductive regular expression:
+To change `cat` to `dog` we use the following expression:
 
 ```bash
 $ echo 'cat' | trre 'c:da:ot:g'
 dog
 ```
 
-We can write the same in a more readable way:
+A more readable version:
 
 ```bash
 $ echo 'cat' | trre '(cat):(dog)'
 dog
 ```
 
-Next, we can use it like `sed` to scan through a string and replace all the matches:
+It can be used like `sed` to replace all matches in a string:
 
 ```bash
 $ echo 'Mary had a little lamb.' | trre '(lamb):(cat)'
@@ -58,28 +58,28 @@ We could think of the expression `(:x)` as of translation of an empty string int
 
 ### Regex over transductions
 
-As for regular expression we could use **alternations** using `|` symbol:
+As for normal regular expression we could use **alternations** with `|` symbol:
 
 ```bash
 $ echo 'cat dog' | trre 'c:bat|d:hog'
 bat hog
 ```
 
-or use the **star** over `trre` to infinitely change the corresponding pattern:
+Or use the **star** over `trre` to repeat the transformation:
 
 ```bash
 $ echo 'catcatcat' | trre '((cat):(dog))*'
 dogdogdog
 ```
 
-but in the default `scan` mode we could omit the **star**:
+In the default `scan` mode, **star** can be omitted:
 
 ```bash
 $ echo 'catcatcat' | trre '(cat):(dog)'
 dogdogdog
 ```
 
-We could use the **star** in the left part of the transductive pair to infinitely "consume" corresponding pattern:
+You can also use the star in the left part to "consume" a pattern infinitely:
 
 ```bash
 $ echo 'catcatcat' | trre '(cat)*:(dog)'
@@ -88,38 +88,37 @@ dog
 
 #### Danger zone
 
-Do not use '*' or '+' in the right part because it forces the infinite generation loop:
+Avoid using `*` or `+` in the right part, as it can cause infinite loops:
 
 ```bash
 $ echo '' | trre ':a*'      # <- do NOT do this
 dog
 ```
 
-Use the finite iteration instead:
+Instead, use finite iterations:
 
 ```bash
 $ echo '' | trre ':(repeat-10-times){10}'
 dog
 ```
 
-
-
 ### Range transformations
 
+Transform ranges of characters:
 
 ```bash
 $ echo "regular expressions" | trre  "[a:A-z:Z]"
 REGULAR EXPRESSIONS
 ```
 
-We could use it to create a toy cipher, e.g. Caesar cipher where we encrypt text by a cyclic shift of the alphabet:
+As more complex example, lets create a toy cipher. Below is the Caesar cipher(1) implementation:
 
 ```bash
 $ echo 'caesar cipher' | trre '[a:b-y:zz:a]'
 dbftbs djqifs
 ```
 
-and decrypt back:
+And decrypt it back:
 
 ```bash
 $ echo 'dbftbs djqifs' | trre '[a:zb:a-y:x]'
@@ -128,10 +127,9 @@ caesar cipher
 
 ### Generators
 
-Transductive expression can be `non-functional`. It means for any input string we could have multiple output strings. Using the default `scan` mode we search for the first possible string to match a transductive expression.
+**`trre`** can generate multiple output strings for a single input. By default, it uses the first possible match. You can also generate all possible outputs.
 
-We can even use pure generator without any imput (or more formally, an empty string as an input).
-
+**Binary sequences:**
 ```bash
 $ echo '' | trre -g '(0|1){3}'
 000
@@ -144,8 +142,7 @@ $ echo '' | trre -g '(0|1){3}'
 111
 ```
 
-We can generate all the subsets as well:
-
+**Subsets:**
 ```bash
 $ echo '' | trre -g ':(0|1){,3}?'
 
@@ -167,58 +164,55 @@ $ echo '' | trre -g ':(0|1){,3}?'
 
 ## Language specification
 
-Informally, we define a `trre` as a pair `pattern-to-match`:`pattern-to-generate`. The `pattern-to-match` can be a string or regexp. The `pattern-to-generate` normally is a string. But it can be a `regex` as well. It is where things may be comlicated. We come back to this later. Moreover, we can do normal regular expression over these pairs.
+Informally, we define a **`trre`** as a pair `pattern-to-match`:`pattern-to-generate`. The `pattern-to-match` can be a string or regexp. The `pattern-to-generate` normally is a string. But it can be a `regex` as well. Moreover, we can do normal regular expression over these pairs.
 
-Formally, we can specify a smiplified grammar of `trre` as following:
+We can specify a smiplified grammar of **`trre`** as following:
 
 ```
 TRRE    <- TRRE* TRRE|TRRE TRRE.TRRE
 TRRE    <- REGEX REGEX:REGEX
 ```
 
-Where `REGEX` is a usual regular expression and `.` stands for concatenation.
+Where `REGEX` is a usual regular expression, and `.` stands for concatenation.
 
-For now I consider the operator `:` as non-associative and the expression `TRRE:TRRE` as unsyntactical. There is a natural meaning for this expression as a composition of relations defined by `trre`s. But it can make things too complex. Maybe I change this later.
+For now I consider the operator `:` as non-associative and the expression `TRRE:TRRE` as unsyntactical. There is a natural meaning for this expression as a composition of relations defined by **`trre`**s. But it can make things too complex. Maybe I change this later.
 
 
 ## Why it works
 
-Under the hood we construct the special automaton that is equivalent to a given transductive expression. The idea behind `trre` is very similar to regular expressions. But there are some key differencies:
+Under the hood, **`trre`** constructs a special automaton called a **Finite State Transducer (FST)**, which is similar to a **Finite State Automaton (FSA)** used in normal regular expressions but handles input-output pairs instead of plain strings.
 
-* `trre` defines a binary relation on a pair of regular languages
-* Instead of `finite state acceptor` (`FSA`) we use `finite state transducer` (`FST`) as underlying inference engine
-* Like in many modern `re` engines we construct a deterministic automata on the fly. The difference here is that we construct (non)deterministic `FST` whenever it is possible.
+Key differences:
 
-The significant obstacle with non-deterministic FST is that it can not be always determinized. In the worst case the number of states during determinization process grow infinitely. In this case we fall back to the non-deterministic FST (NFT) simulation.
+* trre defines a binary relation between two regular languages.
 
-To justify the laguage of trunsductive regular expression we need:
+* It uses **FST**s instead of **FSA**s for inference.
 
-1. Define the `trre` language formaly
-2. Set up the correspondance between underlying automata
-3. Find efficient inference algorithm to process an input string
+* It supports on-the-fly determinization for performance (experimental and under construction!).
 
-The sketch of a proof you can find in this document: [theory.pdf](theory.pdf).
+To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [theory.pdf](theory.pdf).
 
 ## Design choices and open questions
 
-There are tons of decisions to make:
+There are tons of decisions:
 
-1. **Associativity of ':' symbol**. I have chosen ':' symbol to make it look more like usual regular expressions. In some cases it is confusing. E.g. expression 'a:b:c' has no intuitive meaning in the current formulation. There can be an alternative syntax using two separate symbols, e.g. '>' and '<' to express the `consuming` and `producing` symbols. Though it would look less `regex` and more `diff`.
+* Associativity of `:`. The `:` symbol is non-associative, meaning a:b:c is invalid in the current version. There is a natural meaning of transducer composition but it could make things too complicated. Alternative syntaxes (e.g., > and <) could be explored.
 
-2. ':' symbol **precendance**. It is not clear what a priority the symbol should have.
+* Precedence of `:`. The priority of : in expressions needs clarification.
 
-3. Implicit epsilon. I decided to not introduce symbol for an empty string explicitly. Instead, if parser finds empty left or right part of the transductive pair it fills it with empty string. E.g. ':a', 'a|c:' '(cat)*:'.
-
+* Implicit Epsilon: should there be an explicit symbol?
 
 ## Modes and greediness
 
-Current version supports two modes. The default is a *scan* mode where expression is applied to the string sequentially. The second **match** mode check the expression against the whole string. To switch the mode to **matching** use flag `-m`.
+**`trre`** supports two modes:
 
-To generate all possible output string use the modifier `-a`. It is mostly useful in the **matching** mode.
+* **Scan Mode (default)**: Applies transformations sequentially.
 
-There are special `?` modifier which applies to `+`,`*`,`{,}` operators. The behavior is the same as in normal regex.
+* **Match Mode**: Checks the entire string against the expression (use -m flag).
 
-For example, let's remove all the text between "<>" symbols:
+Use `-a` to generate all possible outputs.
+
+The `? modifier makes `*`, `+`, and `{,}` operators non-greedy:
 
 ```bash
 $ echo '<cat><dog>' | trre '<(.:)*>'
@@ -227,21 +221,18 @@ $ echo '<cat><dog>' | trre '<(.:)*>'
 $ echo '<cat><dog>' | trre '<(.:)*?>'
 <><>
 ```
-The second expression behaves non-greedy.
 
-
-## Determinization and performance
+## Determinization
 
 <img src="docs/determinization.png" width="70%"/>
 
-
-The important part of the modern regex engines is determinization. This routine converts the non-deterministic automata to the deterministic one. Once converted it has linear time inference on the input string length. It is handy but the convertion is exponential in the worst case. That's why regex engines use on-the-fly determinization where remember the explored deterministic states and put them into a cache.
+The important part of the modern regex engines is determinization. This routine converts the non-deterministic automata to the deterministic one. Once converted it has linear time inference on the input string length. It is handy but the convertion is exponential in the worst case. That's why regex engines use on-the-fly determinization.
 
 For `trre` the similar approach is possible. The bad news is that not all the non-deterministic transducers (NFT) can be converted to a deterministic (DFT). In case of two "bad" cycles with same input labels the algorithm is trapped in the infinite loop of a state creation. There is a way to detect such loops but it is expensive (see more in [Allauzen, Mohri, Efficient Algorithms for testing the twins property](https://cs.nyu.edu/~mohri/pub/twins.pdf)).
 
-Alternatively, we can just restrict the number of states in the DFT. In case of overflow we could reset the cache or fall back to the non-deterministic automaton.
+The question is should we bother with the rather complex algorithm for transducer determinization. The answer is yes. The deterministic algorithm works faster on large texts. The **`trre`** implements on-the-fly NFT determinization as a separate binary `trre_dft`. But be careful. It is a prototype with possible bugs.
 
-The question is should we bother with the rather complex algorithm for transducer determinization. The answer is yes. The deterministic algorithm works 3-10 times faster on large texts. The `trre` implements on-the-fly NFT determinization as a separate binary `trre_dft`. But be careful. It is a prototype with possible bugs.
+## Performance
 
 The NFT (non-deterministic) version is a bit slower then `sed`:
 
@@ -262,7 +253,7 @@ sys	0m0.010s
 
 ```
 
-The DFT version is faster then `sed` on more complex examples. E.g. let's uppercase the whole text:
+For complex tasks, **`trre_dft`** (deterministic version) outperforms sed:
 
 ```bash
 $ time cat chekhov.txt | sed -e 's/\(.*\)/\U\1/' > /dev/null
@@ -278,27 +269,25 @@ user	0m0.127s
 sys	0m0.009s
 ```
 
-It might be not a fair comparison since `trre` do not support unicode. But I have not specially optimized the current version. So I expect there is a huge space for performance improvements.
-
-
 ## Installation
 
-There is no package or binary distribution yet. Compile it and run the tests.
+No pre-built binaries are available yet. Clone the repository and compile:
 
 ```bash
 make && sh test.sh
 ```
 
-Then put it to a binary forlder according to your distro.
+Then move the binary to a directory in your `$PATH`.
 
 ## TODO
 
 * Complete the ERE feature set:
-    - negation `^` within square brackets
+    - negation `^` within `[]`
     - character classes
-* '$^' symbols for the SCAN mode
+    - '$^' symbols
 * Full unicode support
 * Efficient range processing
+* Stable DFT version
 
 ## References
 

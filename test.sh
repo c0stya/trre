@@ -1,32 +1,28 @@
 #!/bin/bash
 
 cmd_scan="./trre"
-cmd_match="./trre -g"
+cmd_match="./trre -ma"
 
-M() {
-    local inp="$1"
-    local tre="$2"
-    local exp="$3"
+test_cmd() {
+    local inp=$1
+    local tre=$2
+    local exp=$3
+    local cmd=$4
 
-    res=$(echo ${inp} | $cmd_match ${tre})
+    res=$(echo "$inp" | $cmd "$tre")
 
     if ! diff <(echo -e "$exp") <(echo -e "$res") > /dev/null; then
-	echo -e "FAIL M:" "$inp" "->" "$tre"
-	diff <(echo -e "$exp") <(echo -e "$res")
+        echo -e "FAIL $cmd:" "$inp" "->" "$tre"
+        diff <(echo -e "$exp") <(echo -e "$res")
     fi
 }
 
+M() {
+    test_cmd "$1" "$2" "$3" "$cmd_match"
+}
+
 S() {
-    local inp="$1"
-    local tre="$2"
-    local exp="$3"
-
-    res=$(echo ${inp} | $cmd_scan ${tre})
-
-    if ! diff <(echo -e "$exp") <(echo -e "$res") > /dev/null; then
-	echo -e "FAIL S:" "$inp" "->" "$tre"
-	diff <(echo -e "$exp") <(echo -e "$res")
-    fi
+    test_cmd "$1" "$2" "$3" "$cmd_scan"
 }
 
 	# input		# trre			# expected
@@ -117,6 +113,14 @@ S	"?"		"\?"			"?"
 S	":"		"\:"			":"
 S	".a"		"\.a"			".a"
 M	".c"		"[.]c"			".c"
+
+# greed modifiers priorities
+S 	"<cat><dog>" 	"<(.:)*>"		"<>"
+S 	"<cat><dog>" 	"<(.:)*?>"		"<><>"
+S 	"<cat><dog>" 	"<(.:)+>"		"<>"
+S 	"<cat><dog>" 	"<(.:)+?>"		"<><>"
+
+
 
 # epsilon
 # generators

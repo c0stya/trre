@@ -1,34 +1,40 @@
 .\" Process this file with
-.\" groff -man -Tascii foo.1
+.\" groff -man -Tascii trre.1
 .\"
 .TH TRRE 1 "User Commands"
 .SH NAME
-trre \- stream text editor based on transductive regular expressions
+trre \- stream text editor using transductive regular expressions
 .SH SYNOPSIS
-.B trre [-s]
+.B trre
+[\fB\-mad\fR]
 .I PATTERN
-.B [
-.I FILE
-.B ]
+[\fIFILE\fR]
 .SH DESCRIPTION
 .B trre
-performs text transformation according to the transductive regular expression
-.I PATTERN
-Like another stream editor
-.BR sed (1)
-it makes one pass over the input. The transformation completely defined by the transductive pattern.
+is a stream editor that performs text transformations based on transductive regular expressions. Similar to
+.BR sed (1),
+it processes input in a single pass. The transformation is entirely defined by the
+.IR PATTERN .
+
+If no input file is specified,
+.B trre
+reads from standard input.
 .SH OPTIONS
-.IP -s
-Use strict generation mode. It means the number of input lines is equal to the number of output lines.
+.IP \fB\-m\fR
+Enable matching mode. The expression must match the entire input string.
+.IP \fB\-a\fR
+Print all possible output strings. Useful in matching mode.
+.IP \fB\-d\fR
+Enable debug mode. Prints the parsing tree and automaton to stderr.
 .SH EXAMPLES
-.IP "trre c:da:ot:g cat"
-transforms word "cat" to "dog"
-.IP "trre (cat):(dog) cat"
-transforms word "cat" to "dog"
+.IP "\fBecho cat | trre c:da:ot:g\fR"
+Transforms the word "cat" to "dog".
+.IP "\fBecho cat | trre '(cat):(dog)'\fR"
+Transforms the word "cat" to "dog".
 .SH BUGS
-It is an experimental command. Use with caution and care.
+This is an experimental tool. Use with caution.
 .SH AUTHOR
-Konstantin Selivanov <konstantin dot selivanov at >
+Konstantin Selivanov <konstantin dot selivanov at g mail com>
 .SH "SEE ALSO"
 .BR sed (1),
 .BR tr (1)
