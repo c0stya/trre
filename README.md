@@ -145,7 +145,7 @@ caesar cipher
 
 **Binary sequences:**
 ```bash
-$ echo '' | trre -g '(0|1){3}'
+$ echo '' | trre -ma '(0|1){3}'
 
 000
 001
@@ -159,7 +159,7 @@ $ echo '' | trre -g '(0|1){3}'
 
 **Subsets:**
 ```bash
-$ echo '' | trre -g ':(0|1){,3}?'
+$ echo '' | trre -ma ':(0|1){,3}?'
 
 
 0
