@@ -206,7 +206,7 @@ Key differences:
 
 * It supports on-the-fly determinization for performance (experimental and under construction!).
 
-To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [theory.pdf](theory.pdf).
+To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [theory.pdf](doc/theory.pdf).
 
 ## Design choices and open questions
 
@@ -302,7 +302,7 @@ Then move the binary to a directory in your `$PATH`.
 * Complete the ERE feature set:
     - negation `^` within `[]`
     - character classes
-    - '$^' symbols
+    - '$^' anchoring symbols
 * Full unicode support
 * Efficient range processing
 * Stable DFT version
