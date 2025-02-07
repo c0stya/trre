@@ -41,7 +41,7 @@ Mary had a little cat.
 **Deletion:**
 
 ```bash
-$ echo 'xor' | '(x:)or'
+$ echo 'xor' | trre '(x:)or'
 or
 ```
 
