@@ -11,7 +11,7 @@ Regular expressions is a great tool for searching patterns in text. But I always
 
 It  introduces the `:` symbol to define transformations. The simplest form is `a:b`, which replaces a with b. I call this a `transductive pair` or `transduction`.
 
-To demonstrate the concept, I have created a command line tool `trre`. It feels similar to the `grep -E` command.
+To demonstrate the concept, I have created a command line tool **`trre`**. It feels similar to the `grep -E` command.
 
 ## Examples
 
@@ -184,7 +184,7 @@ Under the hood, **`trre`** constructs a special automaton called a **Finite Stat
 
 Key differences:
 
-* trre defines a binary relation between two regular languages.
+* **`trre`** defines a binary relation between two regular languages.
 
 * It uses **FST**s instead of **FSA**s for inference.
 
@@ -228,7 +228,7 @@ $ echo '<cat><dog>' | trre '<(.:)*?>'
 
 The important part of the modern regex engines is determinization. This routine converts the non-deterministic automata to the deterministic one. Once converted it has linear time inference on the input string length. It is handy but the convertion is exponential in the worst case. That's why regex engines use on-the-fly determinization.
 
-For `trre` the similar approach is possible. The bad news is that not all the non-deterministic transducers (NFT) can be converted to a deterministic (DFT). In case of two "bad" cycles with same input labels the algorithm is trapped in the infinite loop of a state creation. There is a way to detect such loops but it is expensive (see more in [Allauzen, Mohri, Efficient Algorithms for testing the twins property](https://cs.nyu.edu/~mohri/pub/twins.pdf)).
+For **`trre`** the similar approach is possible. The bad news is that not all the non-deterministic transducers (NFT) can be converted to a deterministic (DFT). In case of two "bad" cycles with same input labels the algorithm is trapped in the infinite loop of a state creation. There is a way to detect such loops but it is expensive (see more in [Allauzen, Mohri, Efficient Algorithms for testing the twins property](https://cs.nyu.edu/~mohri/pub/twins.pdf)).
 
 The question is should we bother with the rather complex algorithm for transducer determinization. The answer is yes. The deterministic algorithm works faster on large texts. The **`trre`** implements on-the-fly NFT determinization as a separate binary `trre_dft`. But be careful. It is a prototype with possible bugs.
 
@@ -239,7 +239,7 @@ The NFT (non-deterministic) version is a bit slower then `sed`:
 ```bash
 $ wget https://www.gutenberg.org/cache/epub/57333/pg57333.txt -O chekhov.txt
 
-$ time cat chekhov.txt | ./trre '(vodka):(VODKA)' > /dev/null
+$ time cat chekhov.txt | trre '(vodka):(VODKA)' > /dev/null
 
 real	0m0.046s
 user	0m0.043s
@@ -253,7 +253,7 @@ sys	0m0.010s
 
 ```
 
-For complex tasks, **`trre_dft`** (deterministic version) outperforms sed:
+For complex tasks, **`trre_dft`** (deterministic version) can outperform sed:
 
 ```bash
 $ time cat chekhov.txt | sed -e 's/\(.*\)/\U\1/' > /dev/null
@@ -262,7 +262,7 @@ real	0m0.508s
 user	0m0.504s
 sys	0m0.015s
 
-$ time cat chekhov.txt | ./trre_dft '[a:A-z:Z]' > /dev/null
+$ time cat chekhov.txt | trre_dft '[a:A-z:Z]' > /dev/null
 
 real	0m0.131s
 user	0m0.127s
@@ -274,6 +274,8 @@ sys	0m0.009s
 No pre-built binaries are available yet. Clone the repository and compile:
 
 ```bash
+git clone git@github.com:c0stya/trre.git trre
+cd trre
 make && sh test.sh
 ```
 
