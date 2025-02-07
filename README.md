@@ -41,8 +41,8 @@ Mary had a little cat.
 **Deletion:**
 
 ```bash
-$ echo 'xor' | '(x:)or' 'xor'
-cat
+$ echo 'xor' | '(x:)or'
+or
 ```
 
 The expression `(x:)` could be interpreted as of translation of `x` to an empty string.
