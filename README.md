@@ -50,7 +50,7 @@ The expression `(x:)` could be interpreted as of translation of `x` to an empty 
 **Insertion:**
 
 ```bash
-$ echo 'or' | ./trre '(:x)or'
+$ echo 'or' | trre '(:x)or'
 xor
 ```
 
@@ -147,7 +147,7 @@ $ echo '' | trre -g '(0|1){3}'
 We can generate all the subsets as well:
 
 ```bash
-$ echo '' | ./trre -g ':(0|1){,3}?'
+$ echo '' | trre -g ':(0|1){,3}?'
 
 0
 00
@@ -210,9 +210,30 @@ There are tons of decisions to make:
 3. Implicit epsilon. I decided to not introduce symbol for an empty string explicitly. Instead, if parser finds empty left or right part of the transductive pair it fills it with empty string. E.g. ':a', 'a|c:' '(cat)*:'.
 
 
+## Modes and greediness
+
+Current version supports two modes. The default is a *scan* mode where expression is applied to the string sequentially. The second **match** mode check the expression against the whole string. To switch the mode to **matching** use flag `-m`.
+
+To generate all possible output string use the modifier `-a`. It is mostly useful in the **matching** mode.
+
+There are special `?` modifier which applies to `+`,`*`,`{,}` operators. The behavior is the same as in normal regex.
+
+For example, let's remove all the text between "<>" symbols:
+
+```bash
+$ echo '<cat><dog>' | trre '<(.:)*>'
+<>
+
+$ echo '<cat><dog>' | trre '<(.:)*?>'
+<><>
+```
+The second expression behaves non-greedy.
+
+
 ## Determinization and performance
 
 <img src="docs/determinization.png" width="70%"/>
+
 
 The important part of the modern regex engines is determinization. This routine converts the non-deterministic automata to the deterministic one. Once converted it has linear time inference on the input string length. It is handy but the convertion is exponential in the worst case. That's why regex engines use on-the-fly determinization where remember the explored deterministic states and put them into a cache.
 
@@ -220,7 +241,45 @@ For `trre` the similar approach is possible. The bad news is that not all the no
 
 Alternatively, we can just restrict the number of states in the DFT. In case of overflow we could reset the cache or fall back to the non-deterministic automaton.
 
-The question is should we bother with the rather complex algorithm for transducer determinization. The answer is yes. The deterministic algorithm works 5-20 times faster on large texts. The `trre` implements on-the-fly NFT determinization. But be careful. It is a prototype with possible bugs.
+The question is should we bother with the rather complex algorithm for transducer determinization. The answer is yes. The deterministic algorithm works 3-10 times faster on large texts. The `trre` implements on-the-fly NFT determinization as a separate binary `trre_dft`. But be careful. It is a prototype with possible bugs.
+
+The NFT (non-deterministic) version is a bit slower then `sed`:
+
+```bash
+$ wget https://www.gutenberg.org/cache/epub/57333/pg57333.txt -O chekhov.txt
+
+$ time cat chekhov.txt | ./trre '(vodka):(VODKA)' > /dev/null
+
+real	0m0.046s
+user	0m0.043s
+sys	0m0.007s
+
+$ time cat chekhov.txt | sed  's/vodka/VODKA/' > /dev/null
+
+real	0m0.024s
+user	0m0.020s
+sys	0m0.010s
+
+```
+
+The DFT version is faster then `sed` on more complex examples. E.g. let's uppercase the whole text:
+
+```bash
+$ time cat chekhov.txt | sed -e 's/\(.*\)/\U\1/' > /dev/null
+
+real	0m0.508s
+user	0m0.504s
+sys	0m0.015s
+
+$ time cat chekhov.txt | ./trre_dft '[a:A-z:Z]' > /dev/null
+
+real	0m0.131s
+user	0m0.127s
+sys	0m0.009s
+```
+
+It might be not a fair comparison since `trre` do not support unicode. But I have not specially optimized the current version. So I expect there is a huge space for performance improvements.
+
 
 ## Installation
 
