@@ -786,7 +786,7 @@ int main(int argc, char **argv)
 	    infer_backtrack(start, ch, stack, mode, all);
 	    fputc('\n', stdout);
 	}
-    } else {	/* MATCH and GEN modes */
+    } else {	/* MATCH mode */
 	while ((read = getline(&line, &input_len, fp)) != -1) {
 	    line[read-1] = '\0';
 	    infer_backtrack(start, line, stack, mode, all);

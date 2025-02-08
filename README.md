@@ -228,7 +228,7 @@ There are tons of decisions:
 
 Use `-a` to generate all possible outputs.
 
-The `? modifier makes `*`, `+`, and `{,}` operators non-greedy:
+The `?` modifier makes `*`, `+`, and `{,}` operators non-greedy:
 
 ```bash
 $ echo '<cat><dog>' | trre '<(.:)*>'
