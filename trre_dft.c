@@ -692,7 +692,7 @@ void plot_nft(struct nstate *start) {
 		case SPLITNG: 	l='S'; m='n'; break;
 		case SPLIT: 	l='S'; m=' '; break;
 		case JOIN: 	l='J'; m=' '; break;
-		default:	break;
+		default:	l=' '; m=' ';break;
 	    }
             printf("\t\"%p\" [label=\"%c%c\"];\n", (void*)s, l, m);
         }
