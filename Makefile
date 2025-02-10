@@ -1,5 +1,5 @@
 CC=cc
-CFLAGS = -std=c99 -Wall -Wextra -Wpedantic -o2
+CFLAGS = -std=c99 -Wall -Wextra -Wpedantic -O2
 #CFLAGS_DEBUG = -Wall -Wextra -Wpedantic -o0 -g
 
 all: nft dft
