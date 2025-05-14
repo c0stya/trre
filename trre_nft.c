@@ -7,14 +7,16 @@
 #include <unistd.h>
 
 
+/* precendence table */
 int prec(char c) {
     switch (c) {
     	case '|': 		return 1;
-    	case '-': case '.': 	return 2;
+	case '-':		return 2;
     	case ':':		return 3;
+    	case '.': 		return 4;
 	case '?': case '*':
-	case '+': case 'I': 	return 4;
-	case '\\':		return 5;
+	case '+': case 'I': 	return 5;
+	case '\\':		return 6;
     }
     return -1;
 }
@@ -719,7 +721,7 @@ int main(int argc, char **argv)
     struct nstate *start;
     struct sstack *stack = screate(STACK_INIT_CAPACITY);
     enum infer_mode mode = MODE_SCAN;
-    int all = 0;
+    int all = 0;	// 1 = generate all the
 
     int opt, debug=0;
 
@@ -782,7 +784,7 @@ int main(int argc, char **argv)
 		else
 		    fputc(*ch++, stdout);
 	    }
-	    // even if we have empty string we need to run it
+	    // even if we have empty string we still need to run the inference
 	    infer_backtrack(start, ch, stack, mode, all);
 	    fputc('\n', stdout);
 	}

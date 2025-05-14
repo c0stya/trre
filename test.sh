@@ -28,10 +28,21 @@ S() {
 	# input		# trre			# expected
 # basics
 M 	"a"		"a:x" 			"x"
-M	"ab"		"a:xb:y" 		"xy"
+M	"ab"		"ab:xy" 		"xy"
+M	"ab"		"(a:x)(b:y)" 		"xy"
+M 	"cat"		"cat:dog"		"dog"
 M 	"cat"		"(cat):(dog)"		"dog"
-M	"cat"		"c:da:ot:g"		"dog"
+M	"cat"		"(c:d)(a:o)(t:g)"	"dog"
 M	"mat"		"c:da:ot:g"		""
+
+# basics deletion
+M 	 "xor" 		"(x:)or"		"or"
+S 	 "xor" 		"x:"			"or"
+S  	 "Mary had a little lamb"	"a:"	"Mry hd  little lmb"
+
+# basics insertion
+M 	 'or' 		'(:x)or'		"xor"
+S 	 'or' 		':='			"=o=r="
 
 # alternation
 M 	"a"		"a|b|c"			"a"

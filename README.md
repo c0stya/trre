@@ -15,20 +15,26 @@ To demonstrate the concept, I have created a command line tool **`trre`**. It fe
 
 ## Examples
 
+To run it first build the program:
+
+```
+$ make
+```
+
 ### Basics
 
 To change `cat` to `dog` we use the following expression:
 
 ```bash
-$ echo 'cat' | trre 'c:da:ot:g'
+$ echo 'cat' | ./trre 'cat:dog'
 
 dog
 ```
 
-A more readable version:
+A more cryptic token-by-token version:
 
 ```bash
-$ echo 'cat' | trre '(cat):(dog)'
+$ echo 'cat' | ./trre '(c:d)(a:o)(t:g)'
 
 dog
 ```
@@ -36,37 +42,67 @@ dog
 It can be used like `sed` to replace all matches in a string:
 
 ```bash
-$ echo 'Mary had a little lamb.' | trre '(lamb):(cat)'
+$ echo 'Mary had a little lamb.' | ./trre 'lamb:cat'
 
 Mary had a little cat.
 ```
 
 **Deletion:**
 
+To delete a string we can use the pattern `string_to_delete:`
+
 ```bash
-$ echo 'xor' | trre '(x:)or'
+$ echo 'xor' | ./trre '(x:)or'
 
 or
 ```
 
 The expression `(x:)` could be interpreted as of translation of `x` to an empty string.
 
-**Insertion:**
+This expression can be used to delete all the occurances in the default `scan` mode. E.g. expression below removes all occurances of 'a' from a string/
 
 ```bash
-$ echo 'or' | trre '(:x)or'
+$ echo 'Mary had a little lamb.' | ./trre 'a:'
+
+Mry hd  little lmb.
+```
+
+Technically, here we replace character `a` with empty symbol.
+
+To remove several characters from this string we can use square brackets construction similar to normal regex:
+
+```bash
+$ echo 'Mary had a little lamb.' | ./trre '[aie]:'
+
+Mry hd  lttl lmb.
+```
+
+**Insertion:**
+
+To insert a string we can use the pattern `:string_to_insert`
+
+```bash
+$ echo 'or' | ./trre '(:x)or'
 
 xor
 ```
 
 We could think of the expression `(:x)` as of translation of an empty string into `x`.
 
+We can insert a word in a context:
+
+```bash
+$ echo 'Mary had a lamb.' | ./trre 'had a (:little )lamb'
+
+Mary had a little lamb.
+```
+
 ### Regex over transductions
 
 As for normal regular expression we could use **alternations** with `|` symbol:
 
 ```bash
-$ echo 'cat dog' | trre 'c:bat|d:hog'
+$ echo 'cat dog' | ./trre '(c:b)at|(d:h)og'
 
 bat hog
 ```
@@ -74,7 +110,7 @@ bat hog
 Or use the **star** over `trre` to repeat the transformation:
 
 ```bash
-$ echo 'catcatcat' | trre '((cat):(dog))*'
+$ echo 'catcatcat' | ./trre '((cat):(dog))*'
 
 dogdogdog
 ```
@@ -82,7 +118,7 @@ dogdogdog
 In the default `scan` mode, **star** can be omitted:
 
 ```bash
-$ echo 'catcatcat' | trre '(cat):(dog)'
+$ echo 'catcatcat' | ./trre '(cat):(dog)'
 
 dogdogdog
 ```
@@ -90,7 +126,7 @@ dogdogdog
 You can also use the star in the left part to "consume" a pattern infinitely:
 
 ```bash
-$ echo 'catcatcat' | trre '(cat)*:(dog)'
+$ echo 'catcatcat' | ./trre '(cat)*:(dog)'
 
 dog
 ```
@@ -108,7 +144,7 @@ $ echo '' | trre ':a*'      # <- do NOT do this
 Instead, use finite iterations:
 
 ```bash
-$ echo '' | trre ':(repeat-10-times){10}'
+$ echo '' | ./trre ':(repeat-10-times){10}'
 
 repeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-times
 ```
@@ -231,11 +267,11 @@ Use `-a` to generate all possible outputs.
 The `?` modifier makes `*`, `+`, and `{,}` operators non-greedy:
 
 ```bash
-$ echo '<cat><dog>' | trre '<(.:)*>'
+$ echo '<cat><dog>' | ./trre '<(.:)*>'
 
 <>
 
-$ echo '<cat><dog>' | trre '<(.:)*?>'
+$ echo '<cat><dog>' | ./trre '<(.:)*?>'
 
 <><>
 ```

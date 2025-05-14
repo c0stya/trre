@@ -1,3 +1,5 @@
+// Experimental. Do not use in production.
+
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <string.h>
@@ -7,17 +9,20 @@
 #include <unistd.h>
 
 
+/* precendence table */
 int prec(char c) {
     switch (c) {
     	case '|': 		return 1;
-    	case '-': case '.': 	return 2;
+	case '-':		return 2;
     	case ':':		return 3;
+    	case '.': 		return 4;
 	case '?': case '*':
-	case '+': case 'I': 	return 4;
-	case '\\':		return 5;
+	case '+': case 'I': 	return 5;
+	case '\\':		return 6;
     }
     return -1;
 }
+
 
 struct node {
     unsigned char type;
@@ -1162,7 +1167,7 @@ int infer_dft(struct dstate *dstart, unsigned char *inp, struct btnode *dcache, 
 		if (sl->head) {						/* got final states; take the first one */
 		    ds->final = 1;
 		    ds->final_out = str_copy(sl->head->suffix);
-		    // we do not need the sl list anymore!
+		    // we do not need the 'sl' list anymore
 		} else {
 		    ds->final = 0;
 		}
@@ -1170,20 +1175,20 @@ int infer_dft(struct dstate *dstart, unsigned char *inp, struct btnode *dcache, 
 	}
     }
 
-    /*
     if (mode == SCAN && ds->final == 1) {
-	//printf("i:%d\n", i);
 	str_print(out);
 	str_print(ds->final_out);
 	return i;
-    }*/
+    }
 
 
+    /*
     //if (mode == MATCH && ds->final == 1 && *c == '\0') {
     if (ds->final == 1 && *c == '\0') {
 	str_print(out);
 	str_print(ds->final_out);
     }
+    */
 
     str_free(out);
 
@@ -1273,10 +1278,10 @@ int main(int argc, char **argv)
 		ioffset = infer_dft(dstart, (unsigned char*)ch, dcache, mode);
 		if (ioffset > 0)
 		    ch += ioffset;
-		else {
+		else
 		    fputc(*ch++, stdout);
-		}
 	    }
+	    infer_dft(dstart, (unsigned char*)ch, dcache, mode);
 	    fputc('\n', stdout);
 	}
     } else {	/* MATCH mode and generator */
