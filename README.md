@@ -267,7 +267,8 @@ To justify the laguage of trunsductive regular expression we need to prove the c
 
 Below is the table of precedence (priority) of the `trre` operators from high to low:
 
-|-----------------------------------|----------------------|
+| Operator                          | Expression           |
+| --------------------------------- | -------------------- |
 | Escaped characters                | \\                   |
 | Bracket expression                | []                   |
 | Grouping                          | ()                   |
