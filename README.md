@@ -25,7 +25,7 @@ make
 
 To change `cat` to `dog` we use the following expression:
 
-```console
+```bash
 echo 'cat' | ./trre 'cat:dog'
 ```
 ```
@@ -34,7 +34,7 @@ dog
 
 A more cryptic token-by-token version:
 
-```console
+```bash
 echo 'cat' | ./trre '(c:d)(a:o)(t:g)'
 ```
 ```
@@ -43,7 +43,7 @@ dog
 
 It can be used like `sed` to replace all matches in a string:
 
-```console
+```bash
 echo 'Mary had a little lamb.' | ./trre 'lamb:cat'
 ```
 ```
@@ -54,7 +54,7 @@ Mary had a little cat.
 
 To delete a string we can use the pattern `string_to_delete:`
 
-```console
+```bash
 echo 'xor' | ./trre '(x:)or'
 ```
 ```
@@ -65,7 +65,7 @@ The expression `(x:)` could be interpreted as of translation of `x` to an empty 
 
 This expression can be used to delete all the occurances in the default `scan` mode. E.g. expression below removes all occurances of 'a' from a string/
 
-```console
+```bash
 echo 'Mary had a little lamb.' | ./trre 'a:'
 ```
 ```
@@ -76,7 +76,7 @@ Technically, here we replace character `a` with empty symbol.
 
 To remove several characters from this string we can use square brackets construction similar to normal regex:
 
-```console
+```bash
 echo 'Mary had a little lamb.' | ./trre '[aie]:'
 ```
 ```
@@ -87,7 +87,7 @@ Mry hd  lttl lmb.
 
 To insert a string we can use the pattern `:string_to_insert`
 
-```console
+```bash
 echo 'or' | ./trre '(:x)or'
 ```
 ```
@@ -98,7 +98,7 @@ We could think of the expression `(:x)` as of translation of an empty string int
 
 We can insert a word in a context:
 
-```console
+```bash
 echo 'Mary had a lamb.' | ./trre 'had a (:little )lamb'
 ```
 ```
@@ -109,7 +109,7 @@ Mary had a little lamb.
 
 As for normal regular expression we could use **alternations** with `|` symbol:
 
-```console
+```bash
 echo 'cat dog' | ./trre '(c:b)at|(d:h)og'
 ```
 ```
@@ -127,7 +127,7 @@ dogdogdog
 
 In the default `scan` mode, **star** can be omitted:
 
-```console
+```bash
 echo 'catcatcat' | ./trre 'cat:dog'
 ```
 ```
@@ -136,7 +136,7 @@ dogdogdog
 
 You can also use the star in the left part to "consume" a pattern infinitely:
 
-```console
+```bash
 echo 'catcatcat' | ./trre '(cat)*:dog'
 ```
 ```
@@ -147,7 +147,7 @@ dog
 
 Avoid using `*` or `+` in the right part, as it can cause infinite loops:
 
-```console
+```bash
 echo '' | trre ':a*'      # <- do NOT do this
 ```
 ```
@@ -166,7 +166,7 @@ repeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepea
 
 Transform ranges of characters:
 
-```console
+```bash
 echo "regular expressions" | trre  "[a:A-z:Z]"
 ```
 ```
@@ -175,7 +175,7 @@ REGULAR EXPRESSIONS
 
 As more complex example, lets create a toy cipher. Below is the Caesar cipher(1) implementation:
 
-```console
+```bash
 echo 'caesar cipher' | trre '[a:b-y:zz:a]'
 ```
 ```
@@ -184,7 +184,7 @@ dbftbs djqifs
 
 And decrypt it back:
 
-```console
+```bash
 echo 'dbftbs djqifs' | trre '[a:zb:a-y:x]'
 ```
 ```
@@ -196,7 +196,7 @@ caesar cipher
 **`trre`** can generate multiple output strings for a single input. By default, it uses the first possible match. You can also generate all possible outputs.
 
 **Binary sequences:**
-```console
+```bash
 echo '' | trre -ma ':(0|1){3}'
 ```
 ```
@@ -212,7 +212,7 @@ echo '' | trre -ma ':(0|1){3}'
 ```
 
 **Subsets:**
-```console
+```bash
 echo '' | trre -ma ':(0|1){,3}?'
 ```
 ```
@@ -265,7 +265,8 @@ To justify the laguage of trunsductive regular expression we need to prove the c
 
 ## Precedence
 
-Below is the table of precedence (priority) of the `trre` operators:
+Below is the table of precedence (priority) of the `trre` operators from high to low:
+
 |-----------------------------------|----------------------|
 | Escaped characters                | \\                   |
 | Bracket expression                | []                   |
@@ -274,8 +275,7 @@ Below is the table of precedence (priority) of the `trre` operators:
 | Concatenation                     |                      |
 | **Transduction**                  | :                    |
 | Alternation                       | \|                   |
-|-----------------------------------|----------------------|
-*from high to low*
+
 
 ## Modes and greediness
 
@@ -289,14 +289,14 @@ Use `-a` to generate all possible outputs.
 
 The `?` modifier makes `*`, `+`, and `{,}` operators non-greedy:
 
-```console
+```bash
 echo '<cat><dog>' | ./trre '<(.:)*>'
 ```
 ```
 <>
 ```
 
-```console
+```bash
 echo '<cat><dog>' | ./trre '<(.:)*?>'
 ```
 ```
@@ -315,7 +315,7 @@ For **`trre`** the similar approach is possible. The bad news is that not all th
 
 The default non-deterministic version is a bit slower then `sed`:
 
-```console
+```bash
 wget https://www.gutenberg.org/cache/epub/57333/pg57333.txt -O chekhov.txt
 
 time cat chekhov.txt | ./trre '(vodka):(VODKA)' > /dev/null
@@ -326,7 +326,7 @@ user	0m0.043s
 sys	0m0.007s
 ```
 
-```console
+```bash
 time cat chekhov.txt | sed  's/vodka/VODKA/' > /dev/null
 ```
 ```
@@ -337,7 +337,7 @@ sys	0m0.010s
 
 For complex tasks, **`trre_dft`** (deterministic version) can outperform sed:
 
-```console
+```bash
 time cat chekhov.txt | sed -e 's/\(.*\)/\U\1/' > /dev/null
 ```
 ```
@@ -346,7 +346,7 @@ user	0m0.504s
 sys	0m0.015s
 ```
 
-```console
+```bash
 time cat chekhov.txt | ./trre_dft '[a:A-z:Z]' > /dev/null
 ```
 ```
