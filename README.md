@@ -148,7 +148,7 @@ dog
 Avoid using `*` or `+` in the right part, as it can cause infinite loops:
 
 ```bash
-echo '' | trre ':a*'      # <- do NOT do this
+echo '' | ./trre ':a*'      # <- do NOT do this
 ```
 ```
 ...
@@ -167,7 +167,7 @@ repeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepeat-10-timesrepea
 Transform ranges of characters:
 
 ```bash
-echo "regular expressions" | trre  "[a:A-z:Z]"
+echo "regular expressions" | ./trre  "[a:A-z:Z]"
 ```
 ```
 REGULAR EXPRESSIONS
@@ -176,7 +176,7 @@ REGULAR EXPRESSIONS
 As more complex example, lets create a toy cipher. Below is the Caesar cipher(1) implementation:
 
 ```bash
-echo 'caesar cipher' | trre '[a:b-y:zz:a]'
+echo 'caesar cipher' | ./trre '[a:b-y:zz:a]'
 ```
 ```
 dbftbs djqifs
@@ -185,7 +185,7 @@ dbftbs djqifs
 And decrypt it back:
 
 ```bash
-echo 'dbftbs djqifs' | trre '[a:zb:a-y:x]'
+echo 'dbftbs djqifs' | ./trre '[a:zb:a-y:x]'
 ```
 ```
 caesar cipher
@@ -197,7 +197,7 @@ caesar cipher
 
 **Binary sequences:**
 ```bash
-echo '' | trre -ma ':(0|1){3}'
+echo '' | ./trre -ma ':(0|1){3}'
 ```
 ```
 
@@ -213,7 +213,7 @@ echo '' | trre -ma ':(0|1){3}'
 
 **Subsets:**
 ```bash
-echo '' | trre -ma ':(0|1){,3}?'
+echo '' | ./trre -ma ':(0|1){,3}?'
 ```
 ```
 
