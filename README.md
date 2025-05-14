@@ -27,7 +27,9 @@ To change `cat` to `dog` we use the following expression:
 
 ```bash
 $ echo 'cat' | ./trre 'cat:dog'
+```
 
+```console
 dog
 ```
 
@@ -110,7 +112,7 @@ bat hog
 Or use the **star** over `trre` to repeat the transformation:
 
 ```bash
-$ echo 'catcatcat' | ./trre '((cat):(dog))*'
+$ echo 'catcatcat' | ./trre '(cat:dog)*'
 
 dogdogdog
 ```
@@ -118,7 +120,7 @@ dogdogdog
 In the default `scan` mode, **star** can be omitted:
 
 ```bash
-$ echo 'catcatcat' | ./trre '(cat):(dog)'
+$ echo 'catcatcat' | ./trre 'cat:dog'
 
 dogdogdog
 ```
@@ -126,7 +128,7 @@ dogdogdog
 You can also use the star in the left part to "consume" a pattern infinitely:
 
 ```bash
-$ echo 'catcatcat' | ./trre '(cat)*:(dog)'
+$ echo 'catcatcat' | ./trre '(cat)*:dog'
 
 dog
 ```
@@ -244,15 +246,21 @@ Key differences:
 
 To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [theory.pdf](doc/theory.pdf).
 
-## Design choices and open questions
+## Precedence
 
-There are tons of decisions:
+Below is the table of precedence (priority) of the `trre` operators:
 
-* Associativity of `:`. The `:` symbol is non-associative, meaning a:b:c is invalid in the current version. There is a natural meaning of transducer composition but it could make things too complicated. Alternative syntaxes (e.g., > and <) could be explored.
-
-* Precedence of `:`. The priority of : in expressions needs clarification.
-
-* Implicit Epsilon: should there be an explicit symbol?
+|----------------------------------------------------------|
+|             trre precedence (from high to low)           |
+|----------------------------------------------------------|
+| Escaped characters                | \\                   |
+| Bracket expression                | []                   |
+| Grouping                          | ()                   |
+| Single-character-ERE duplication  | * + ? {m,n}          |
+| Concatenation                     |                      |
+| *Transduction*                    | :                    |
+| Alternation                       | \|                   |
+------------------------------------|----------------------|
 
 ## Modes and greediness
 
@@ -286,12 +294,12 @@ For **`trre`** the similar approach is possible. The bad news is that not all th
 
 ## Performance
 
-The NFT (non-deterministic) version is a bit slower then `sed`:
+The default non-deterministic version is a bit slower then `sed`:
 
 ```bash
 $ wget https://www.gutenberg.org/cache/epub/57333/pg57333.txt -O chekhov.txt
 
-$ time cat chekhov.txt | trre '(vodka):(VODKA)' > /dev/null
+$ time cat chekhov.txt | ./trre '(vodka):(VODKA)' > /dev/null
 
 real	0m0.046s
 user	0m0.043s
@@ -314,7 +322,7 @@ real	0m0.508s
 user	0m0.504s
 sys	0m0.015s
 
-$ time cat chekhov.txt | trre_dft '[a:A-z:Z]' > /dev/null
+$ time cat chekhov.txt | ./trre_dft '[a:A-z:Z]' > /dev/null
 
 real	0m0.131s
 user	0m0.127s
