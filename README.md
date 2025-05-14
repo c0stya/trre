@@ -1,23 +1,17 @@
 # TRRE: transductive regular expressions
 
 #### TLDR: It is an extension of the regular expressions for text editing and a `grep`-like command line tool.
-#### It is a PROTOTYPE. Do not use in production.
 
--   [Intro](#intro){#toc-intro}
--   [Examples](#examples){#toc-examples}
-    -   [Basics](#basics){#toc-basics}
-    -   [Regex over transductions](#regex-over-transductions){#toc-regex-over-transductions}
-    -   [Range transformations](#range-transformations){#toc-range-transformations}
-    -   [Generators](#generators){#toc-generators}
--   [Language specification](#language-specification){#toc-language-specification}
--   [Why it works](#why-it-works){#toc-why-it-works}
--   [Precedence](#precedence){#toc-precedence}
--   [Modes and greediness](#modes-and-greediness){#toc-modes-and-greediness}
--   [Determinization](#determinization){#toc-determinization}
--   [Performance](#performance){#toc-performance}
--   [Installation](#installation){#toc-installation}
--   [TODO](#todo){#toc-todo}
--   [References](#references){#toc-references}
+-   [Examples](#examples)
+-   [Language specification](#language-specification)
+-   [Why it works](#why-it-works)
+-   [Precedence](#precedence)
+-   [Modes and greediness](#modes-and-greediness)
+-   [Determinization](#determinization)
+-   [Performance](#performance)
+-   [Installation](#installation)
+-   [TODO](#todo)
+-   [References](#references)
 
 
 ## Intro
