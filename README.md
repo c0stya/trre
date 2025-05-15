@@ -272,7 +272,7 @@ Key differences:
 
 * It supports on-the-fly determinization for performance (experimental and under construction!).
 
-To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [theory.pdf](doc/theory.pdf).
+To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [docs/theory.pdf](doc/theory.pdf).
 
 ## Precedence
 
@@ -314,6 +314,16 @@ echo '<cat><dog>' | ./trre '<(.:)*?>'
 ```
 <><>
 ```
+
+Another common example is to change something within tags or brackets. E.g. to change everything within "<>" we can use the following expression:
+
+```bash
+echo '<dog> <mouse>' | ./trre '<(.*?:cat)>'
+```
+```
+<cat> <cat>
+```
+
 
 ## Determinization
 
