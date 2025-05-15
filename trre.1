@@ -3,7 +3,7 @@
 .\"
 .TH TRRE 1 "User Commands"
 .SH NAME
-trre \- stream text editor using transductive regular expressions
+trre \- stream text editor based on transductive regular expressions
 .SH SYNOPSIS
 .B trre
 [\fB\-mad\fR]
@@ -11,7 +11,7 @@ trre \- stream text editor using transductive regular expressions
 [\fIFILE\fR]
 .SH DESCRIPTION
 .B trre
-is a stream editor that performs text transformations based on transductive regular expressions. Similar to
+is a stream editor that performs string transformations. Similar to
 .BR sed (1),
 it processes input in a single pass. The transformation is entirely defined by the
 .IR PATTERN .
@@ -27,9 +27,9 @@ Print all possible output strings. Useful in matching mode.
 .IP \fB\-d\fR
 Enable debug mode. Prints the parsing tree and automaton to stderr.
 .SH EXAMPLES
-.IP "\fBecho cat | trre c:da:ot:g\fR"
+.IP "\fBecho cat | trre 'cat:dog'\fR"
 Transforms the word "cat" to "dog".
-.IP "\fBecho cat | trre '(cat):(dog)'\fR"
+.IP "\fBecho cat | trre '(c:d)(a:o)(t:g)'\fR"
 Transforms the word "cat" to "dog".
 .SH BUGS
 This is an experimental tool. Use with caution.
