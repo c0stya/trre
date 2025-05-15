@@ -272,7 +272,7 @@ Key differences:
 
 * It supports on-the-fly determinization for performance (experimental and under construction!).
 
-To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [docs/theory.pdf](doc/theory.pdf).
+To justify the laguage of trunsductive regular expression we need to prove the correspondence between **`trre`** expressions and the corresponding **FST**s. There is my sketch of a the proof: [docs/theory.pdf](docs/theory.pdf).
 
 ## Precedence
 
