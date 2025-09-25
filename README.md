@@ -196,7 +196,7 @@ dbftbs djqifs
 And decrypt it back:
 
 ```bash
-echo 'dbftbs djqifs' | ./trre '[a:zb:a-y:x]'
+echo 'dbftbs djqifs' | ./trre '[a:zb:a-z:y]'
 ```
 ```
 caesar cipher
