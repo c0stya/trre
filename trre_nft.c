@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -44,6 +43,43 @@ static struct node **opd = operands;
 static char* output;
 static size_t output_capacity=32;
 
+#define ARRAY_LENGTH(a) (sizeof(a) / sizeof((a)[0]))
+
+static void parse_error(const char *message) {
+    fprintf(stderr, "error: %s\n", message);
+    exit(EXIT_FAILURE);
+}
+
+static void opr_push(unsigned char item) {
+    if ((size_t)(opr - operators) == ARRAY_LENGTH(operators))
+	parse_error("parser operator stack overflow");
+    *opr++ = item;
+}
+
+static unsigned char opr_pop(void) {
+    if (opr == operators)
+	parse_error("parser operator stack underflow");
+    return *--opr;
+}
+
+static unsigned char opr_top(void) {
+    if (opr == operators)
+	parse_error("parser operator stack underflow");
+    return *(opr-1);
+}
+
+static void opd_push(struct node *item) {
+    if ((size_t)(opd - operands) == ARRAY_LENGTH(operands))
+	parse_error("parser operand stack overflow");
+    *opd++ = item;
+}
+
+static struct node *opd_pop(void) {
+    if (opd == operands)
+	parse_error("parser operand stack underflow");
+    return *--opd;
+}
+
 
 struct node * create_node(char type, struct node *l, struct node *r) {
     struct node *node = malloc(sizeof(struct node));
@@ -78,10 +114,10 @@ void reduce_postfix(char op, int ng) {
 
     switch(op) {
 	case '*': case '+': case '?':
-	    l = pop(opd);
+	    l = opd_pop();
 	    r = create_node(op, l, NULL);
 	    r->val = ng;
-	    push(opd, r);
+	    opd_push(r);
 	    break;
 	default:
 	    fprintf(stderr, "error: unexpected postfix operator\n");
@@ -94,12 +130,12 @@ void reduce() {
     char op;
     struct node *l, *r;
 
-    op = pop(opr);
+    op = opr_pop();
     switch(op) {
 	case '|': case '.': case ':': case '-':
-	    r = pop(opd);
-	    l = pop(opd);
-	    push(opd, create_node(op, l, r));
+	    r = opd_pop();
+	    l = opd_pop();
+	    opd_push(create_node(op, l, r));
 	    break;
 	case '(':
 	    fprintf(stderr, "error: unmached parenthesis\n");
@@ -109,9 +145,9 @@ void reduce() {
 
 
 void reduce_op(char op) {
-    while(opr != operators && prec(top(opr)) >= prec(op))
+    while(opr != operators && prec(opr_top()) >= prec(op))
         reduce();
-    push(opr, op);
+    opr_push(op);
 }
 
 char* parse_curly_brackets(char *expr) {
@@ -140,9 +176,9 @@ char* parse_curly_brackets(char *expr) {
 	    }
 
 	    r = create_nodev(lv, count);
-	    l = create_node('I', pop(opd), r);
+	    l = create_node('I', opd_pop(), r);
 	    l->val = ng;
-	    push(opd, l);
+	    opd_push(l);
 
             return expr;
         } else {
@@ -166,7 +202,7 @@ char* parse_square_brackets(char *expr) {
 		    fprintf(stderr, "error: unexpected symbol in square brackets: %c", c);
 		    exit(EXIT_FAILURE);
 		default:
-		    push(opd, create_nodev('c', c));       // push operand
+		    opd_push(create_nodev('c', c));       // push operand
 		    state = 1;
 	    }
 	} else {                       		   	   // expect operator
@@ -176,9 +212,9 @@ char* parse_square_brackets(char *expr) {
 		    state = 0;
 		    break;
 		case ']':
-		    while (opr != operators && top(opr) != '[')
+		    while (opr != operators && opr_top() != '[')
 			reduce();
-		    --opr;              // remove [ from the stack
+		    opr_pop();          // remove [ from the stack
 		    return expr;
 		default:                // implicit alternation
 		    reduce_op('|');
@@ -201,32 +237,34 @@ struct node * parse(char *expr) {
         if (state == 0) {                     	// expect operand
             switch(c) {
 		case '(':
-		    push(opr, c);
+		    opr_push(c);
 		    break;
 		case '[':
-		    push(opr, c);
+		    opr_push(c);
 		    expr = parse_square_brackets(expr+1);
 		    state = 1;
 		    break;
 		case '\\':
-		    push(opd, create_nodev('c', *++expr));
+		    if (*++expr == '\0')
+			parse_error("trailing escape character");
+		    opd_push(create_nodev('c', *expr));
 		    state = 1;
 		    break;
 		case '.':
 		    //push(opd, create_nodev('a', 0));
-		    push(opd, create_node('-',
+		    opd_push(create_node('-',
 		    		create_nodev('c', 0),
 		    		create_nodev('c', 255)));
 		    state = 1;
 		    break;
 		case ':':					// epsilon as an implicit left operand
-		    push(opd, create_nodev('e', c));
+		    opd_push(create_nodev('e', c));
 		    state = 1;
 		    continue;					// stay in the same position in expr
 		case '|': case '*': case '+': case '?':
 		case ')': case '{': case '}':
-		    if (opr != operators && top(opr) == ':') { 	// epsilon as an implicit right operand
-			push(opd, create_nodev('e', c));
+		    if (opr != operators && opr_top() == ':') { 	// epsilon as an implicit right operand
+			opd_push(create_nodev('e', c));
 			state = 1;
 			continue;				// stay in the same position in expr
 		    } else {
@@ -234,7 +272,7 @@ struct node * parse(char *expr) {
 			exit(EXIT_FAILURE);
 		    }
 		default:
-		    push(opd, create_nodev('c', c));
+		    opd_push(create_nodev('c', c));
 		    state = 1;
             }
 	} else {               					// expect postfix or binary operator
@@ -256,7 +294,7 @@ struct node * parse(char *expr) {
 		 * implicit epsilon for a trailing transduction. */
 		reduce_op(c);
 		if (*(expr+1) == '\0') {
-                    push(opd, create_nodev('e', c));
+                    opd_push(create_nodev('e', c));
                 }
 		state = 0;
 		break;
@@ -264,13 +302,13 @@ struct node * parse(char *expr) {
                 expr = parse_curly_brackets(expr+1);
                 break;
             case ')':
-                while (opr != operators && top(opr) != '(')
+                while (opr != operators && opr_top() != '(')
                     reduce();
-                if (opr == operators || top(opr) != '(') {
+                if (opr == operators || opr_top() != '(') {
 		    fprintf(stderr, "error: unmached parenthesis");
 		    exit(EXIT_FAILURE);
 		}
-                --opr;                       	// remove ( from the stack
+                opr_pop();                       // remove ( from the stack
                 break;
             default:                            // implicit cat
                 reduce_op('.');
@@ -284,9 +322,12 @@ struct node * parse(char *expr) {
     while (opr != operators) {
         reduce();
     }
-    assert (operands != opd);
+    if (opd == operands)
+	parse_error("empty expression");
+    if (opd != operands + 1)
+	parse_error("invalid expression");
 
-    return pop(opd);
+    return opd_pop();
 }
 
 

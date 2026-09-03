@@ -32,6 +32,21 @@ test_raw() {
     fi
 }
 
+test_error() {
+    local tre=$1
+    local exp=$2
+    local res
+    local status
+
+    res=$(./trre "$tre" </dev/null 2>&1)
+    status=$?
+    if ((status == 0)) || [[ "$res" != "$exp" ]]; then
+        echo "FAIL ./trre: expected parser error: $exp"
+	printf 'actual: %s\n' "$res"
+	((failures++))
+    fi
+}
+
 M() {
     test_cmd "$1" "$2" "$3" "$cmd_match"
 }
@@ -165,6 +180,17 @@ test_raw "a" "a:(x|y)" "x\ny\n" "./trre -ma"
 
 ## iteration, range
 #printf "aaa\n"	| $CMD "((a:x){,}.*)"
+
+# parser errors
+test_error "a|" "error: parser operand stack underflow"
+test_error "" "error: empty expression"
+test_error "\\" "error: trailing escape character"
+
+long_expr=""
+for ((i=0; i<1025; i++)); do
+    long_expr+="("
+done
+test_error "$long_expr" "error: parser operator stack overflow"
 
 if ((failures > 0)); then
     echo "$failures test(s) failed"
