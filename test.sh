@@ -2,6 +2,7 @@
 
 cmd_scan="./trre"
 cmd_match="./trre -ma"
+failures=0
 
 test_cmd() {
     local inp=$1
@@ -14,6 +15,20 @@ test_cmd() {
     if ! diff <(echo -e "$exp") <(echo -e "$res") > /dev/null; then
         echo -e "FAIL $cmd:" "$inp" "->" "$tre"
         diff <(echo -e "$exp") <(echo -e "$res")
+	((failures++))
+    fi
+}
+
+test_raw() {
+    local inp=$1
+    local tre=$2
+    local exp=$3
+    local cmd=$4
+
+    if ! diff <(printf '%b' "$exp") <(printf '%b' "$inp" | $cmd "$tre") > /dev/null; then
+        echo "FAIL $cmd (byte-exact): $tre"
+        diff <(printf '%b' "$exp") <(printf '%b' "$inp" | $cmd "$tre")
+	((failures++))
     fi
 }
 
@@ -39,6 +54,12 @@ M	"mat"		"c:da:ot:g"		""
 M 	 "xor" 		"(x:)or"		"or"
 S 	 "xor" 		"x:"			"or"
 S  	 "Mary had a little lamb"	"a:"	"Mry hd  little lmb"
+
+# deletion precedence: concatenation binds more tightly than transduction
+test_raw "ab\nab\nab\n" "(ab:)" "\n\n\n" "./trre"
+test_raw "ab\nab\nab\n" "ab:" "\n\n\n" "./trre"
+test_raw "b\nb\nb\n" "(b:)" "\n\n\n" "./trre"
+test_raw "b\nb\nb\n" "b:" "\n\n\n" "./trre"
 
 # basics insertion
 M 	 'or' 		'(:x)or'		"xor"
@@ -131,6 +152,12 @@ S 	"<cat><dog>" 	"<(.:)*?>"		"<><>"
 S 	"<cat><dog>" 	"<(.:)+>"		"<>"
 S 	"<cat><dog>" 	"<(.:)+?>"		"<><>"
 
+# line termination
+test_raw "a\n" "." "a\n" "./trre"
+test_raw "a" "." "a" "./trre"
+test_raw "a\n" "." "a\n" "./trre -m"
+test_raw "a" "." "a" "./trre -m"
+test_raw "a" "a:(x|y)" "x\ny\n" "./trre -ma"
 
 
 # epsilon
@@ -138,3 +165,8 @@ S 	"<cat><dog>" 	"<(.:)+?>"		"<><>"
 
 ## iteration, range
 #printf "aaa\n"	| $CMD "((a:x){,}.*)"
+
+if ((failures > 0)); then
+    echo "$failures test(s) failed"
+    exit 1
+fi

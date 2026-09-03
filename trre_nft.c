@@ -252,10 +252,12 @@ struct node * parse(char *expr) {
                 state = 0;
                 break;
             case ':':
-                if (*(expr+1) == '\0') {		// implicit epsilon as a right operand
+		/* Finish higher-precedence concatenation before adding an
+		 * implicit epsilon for a trailing transduction. */
+		reduce_op(c);
+		if (*(expr+1) == '\0') {
                     push(opd, create_nodev('e', c));
                 }
-		reduce_op(c);
 		state = 0;
 		break;
             case '{':
@@ -589,8 +591,10 @@ char* resize_output(char *output, size_t *capacity) {
     return output;
 }
 
-// Main DFS traversal function
-ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack, enum infer_mode mode, int all) {
+/* Main DFS traversal. Match mode uses terminate_output to delimit results;
+ * scan mode leaves record termination to its caller. */
+ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack,
+		enum infer_mode mode, int all, int terminate_output) {
     size_t i = 0, o = 0;
     struct nstate *s = start;
     stack->n_items = 0;		/* reset stack; do not shrink */
@@ -636,7 +640,8 @@ ssize_t infer_backtrack(struct nstate *start, char *input, struct sstack *stack,
 		    if (input[i] == '\0') {
 			output[o] = '\0'; // Null-terminate the output string
 			fputs(output, stdout);
-			fputc('\n', stdout);
+			if (terminate_output)
+			    fputc('\n', stdout);
 			if (!all)
 			    return i;
 		    }
@@ -722,6 +727,7 @@ int main(int argc, char **argv)
     struct sstack *stack = screate(STACK_INIT_CAPACITY);
     enum infer_mode mode = MODE_SCAN;
     int all = 0;	// 1 = generate all the
+    int had_newline;
 
     int opt, debug=0;
 
@@ -774,24 +780,32 @@ int main(int argc, char **argv)
 
     if (mode == MODE_SCAN) {
 	while ((read = getline(&line, &input_len, fp)) != -1) {
-	    line[read-1] = '\0';
+	    /* getline retains the delimiter; remember it so an unterminated
+	     * final record remains unterminated in the output. */
+	    had_newline = read > 0 && line[read-1] == '\n';
+	    if (had_newline)
+		line[read-1] = '\0';
 	    ch = line;
 
 	    while (*ch != '\0') {
-		ioffset = infer_backtrack(start, ch, stack, mode, all);
+		ioffset = infer_backtrack(start, ch, stack, mode, all, 0);
 		if (ioffset > 0)
 		    ch += ioffset;
 		else
 		    fputc(*ch++, stdout);
 	    }
 	    // even if we have empty string we still need to run the inference
-	    infer_backtrack(start, ch, stack, mode, all);
-	    fputc('\n', stdout);
+	    infer_backtrack(start, ch, stack, mode, all, 0);
+	    if (had_newline)
+		fputc('\n', stdout);
 	}
     } else {	/* MATCH mode */
 	while ((read = getline(&line, &input_len, fp)) != -1) {
-	    line[read-1] = '\0';
-	    infer_backtrack(start, line, stack, mode, all);
+	    /* In all-results mode, newlines also separate generated outputs. */
+	    had_newline = read > 0 && line[read-1] == '\n';
+	    if (had_newline)
+		line[read-1] = '\0';
+	    infer_backtrack(start, line, stack, mode, all, had_newline || all);
 	    //fputc('\n', stdout);
 	}
     }
