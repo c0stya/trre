@@ -2,7 +2,7 @@ CC=cc
 CFLAGS = -std=c99 -Wall -Wextra -Wpedantic -O3
 #CFLAGS_DEBUG = -Wall -Wextra -Wpedantic -O0 -g
 
-all: nft dft
+all: nft
 
 nft: trre_nft.c
 	$(CC) $(CFLAGS) trre_nft.c -o trre
